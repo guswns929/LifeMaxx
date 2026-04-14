@@ -1,7 +1,5 @@
 # LifeMaxx
 
-A full-stack workout progress tracking web app with an interactive body diagram, WHOOP integration, strength rankings, calorie tracking, and personalized recommendations.
-
 ## Features
 
 - **Interactive Body Diagram** — Click muscle groups to view development scores, exercise history, and population-based strength rankings. Hover to highlight muscles with a tooltip.
