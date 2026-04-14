@@ -24,6 +24,7 @@ model User {
   bodyMeasurements BodyMeasurement[]
   whoopConnection  WhoopConnection?
   whoopData        WhoopDatum[]
+  customExercises  Exercise[]       @relation("CustomExercises")
 }
 
 model Workout {
@@ -79,7 +80,13 @@ model Exercise {
   primaryMuscles     String  // comma-separated muscle slugs
   secondaryMuscles   String? // comma-separated muscle slugs
   isStrengthStandard Boolean @default(false)
+  isCustom           Boolean @default(false)
+  createdByUserId    String?
+  linkedExerciseId   String? // links a custom exercise to a standard one for tracking
 
+  createdByUser     User?     @relation("CustomExercises", fields: [createdByUserId], references: [id])
+  linkedExercise    Exercise? @relation("ExerciseLinks", fields: [linkedExerciseId], references: [id])
+  linkedFrom        Exercise[] @relation("ExerciseLinks")
   workoutExercises  WorkoutExercise[]
   strengthStandards StrengthStandard[]
 }
