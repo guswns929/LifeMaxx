@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import {
   getValidToken,
   fetchRecoveryData,
+  fetchCycleData,
   fetchSleepData,
   fetchWorkoutData,
 } from "@/lib/whoop";
@@ -22,7 +23,14 @@ export async function POST(_request: NextRequest) {
       Date.now() - 14 * 24 * 60 * 60 * 1000
     ).toISOString();
 
-    const results = { recovery: 0, sleep: 0, workouts: 0, errors: [] as string[] };
+    const results = { recovery: 0, strain: 0, sleep: 0, workouts: 0, errors: [] as string[] };
+
+    // Normalize a date to midnight UTC for consistent daily deduplication
+    function toMidnight(d: Date): Date {
+      const m = new Date(d);
+      m.setUTCHours(0, 0, 0, 0);
+      return m;
+    }
 
     // Sync each data type independently so one failure doesn't block others
     try {
@@ -32,7 +40,7 @@ export async function POST(_request: NextRequest) {
         for (const cycle of cycleRecords) {
           const score = cycle.score;
           if (!score) continue;
-          const date = new Date(cycle.created_at || cycle.start || cycle.updated_at);
+          const date = toMidnight(new Date(cycle.created_at || cycle.start || cycle.updated_at));
           await prisma.whoopDatum.upsert({
             where: { userId_date_dataType: { userId, date, dataType: "recovery" } },
             create: {
@@ -57,12 +65,41 @@ export async function POST(_request: NextRequest) {
       results.errors.push(`Recovery: ${e instanceof Error ? e.message : "unknown"}`);
     }
 
+    // Sync daily strain from cycles (this is the TOTAL daily strain, not per-workout)
+    try {
+      const cycleData = await fetchCycleData(token, startDate, endDate);
+      const cycles = cycleData.records || cycleData;
+      if (Array.isArray(cycles)) {
+        for (const cycle of cycles) {
+          const score = cycle.score;
+          if (!score?.strain) continue;
+          const date = toMidnight(new Date(cycle.start || cycle.created_at));
+          await prisma.whoopDatum.upsert({
+            where: { userId_date_dataType: { userId, date, dataType: "strain" } },
+            create: {
+              userId, date, dataType: "strain",
+              strainScore: score.strain,
+              rawJson: JSON.stringify(cycle),
+            },
+            update: {
+              strainScore: score.strain,
+              rawJson: JSON.stringify(cycle),
+            },
+          });
+          results.strain++;
+        }
+      }
+    } catch (e) {
+      console.error("WHOOP sync cycle/strain error:", e);
+      results.errors.push(`Strain: ${e instanceof Error ? e.message : "unknown"}`);
+    }
+
     try {
       const sleepData = await fetchSleepData(token, startDate, endDate);
       const sleepRecords = sleepData.records || sleepData;
       if (Array.isArray(sleepRecords)) {
         for (const s of sleepRecords) {
-          const date = new Date(s.start || s.created_at);
+          const date = toMidnight(new Date(s.start || s.created_at));
           await prisma.whoopDatum.upsert({
             where: { userId_date_dataType: { userId, date, dataType: "sleep" } },
             create: {
@@ -97,19 +134,8 @@ export async function POST(_request: NextRequest) {
           const activityId = String(w.id);
           const date = new Date(w.start || w.created_at);
 
-          await prisma.whoopDatum.upsert({
-            where: { userId_date_dataType: { userId, date, dataType: "strain" } },
-            create: {
-              userId, date, dataType: "strain",
-              strainScore: w.score?.strain ?? null,
-              rawJson: JSON.stringify(w),
-            },
-            update: {
-              strainScore: w.score?.strain ?? null,
-              rawJson: JSON.stringify(w),
-            },
-          });
-
+          // Per-workout strain is stored on the Workout record, not WhoopDatum
+          // Daily strain comes from the cycle sync above
           await prisma.workout.upsert({
             where: { whoopActivityId: activityId },
             create: {
@@ -140,13 +166,13 @@ export async function POST(_request: NextRequest) {
 
     console.log("WHOOP sync results:", results);
 
-    if (results.errors.length > 0 && results.recovery + results.sleep + results.workouts === 0) {
+    if (results.errors.length > 0 && results.recovery + results.strain + results.sleep + results.workouts === 0) {
       return NextResponse.json({ error: results.errors.join("; ") }, { status: 500 });
     }
 
     return NextResponse.json({
       success: true,
-      synced: { recovery: results.recovery, sleep: results.sleep, workouts: results.workouts },
+      synced: { recovery: results.recovery, strain: results.strain, sleep: results.sleep, workouts: results.workouts },
       errors: results.errors.length > 0 ? results.errors : undefined,
     });
   } catch (error) {

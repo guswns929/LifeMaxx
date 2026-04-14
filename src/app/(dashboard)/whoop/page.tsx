@@ -116,6 +116,7 @@ export default function WhoopPage() {
       if (res.ok) {
         const parts = [];
         if (data.synced?.recovery) parts.push(`${data.synced.recovery} recovery`);
+        if (data.synced?.strain) parts.push(`${data.synced.strain} strain`);
         if (data.synced?.sleep) parts.push(`${data.synced.sleep} sleep`);
         if (data.synced?.workouts) parts.push(`${data.synced.workouts} workout`);
         const summary = parts.length > 0 ? `Synced ${parts.join(", ")} records` : "Sync complete (no new data)";
