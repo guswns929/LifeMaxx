@@ -33,9 +33,15 @@ interface CompositeScore {
   breakdown: Record<string, number>;
 }
 
+interface StrainData {
+  date: string;
+  score: number;
+}
+
 interface WhoopMetricsProps {
   recovery: RecoveryData[];
   sleep: SleepData[];
+  strain?: StrainData[];
   latestRecovery?: {
     score: number;
     hrv: number;
@@ -143,6 +149,7 @@ function formatDate(iso: string): string {
 export default function WhoopMetrics({
   recovery,
   sleep,
+  strain,
   latestRecovery,
   latestStrain,
   compositeScores,
@@ -249,6 +256,22 @@ export default function WhoopMetrics({
               <YAxis tick={{ fontSize: 11, fill: "#A8A29E" }} tickLine={false} unit=" hrs" />
               <Tooltip contentStyle={{ backgroundColor: "#1C1917", border: "1px solid #44403C", borderRadius: "8px", fontSize: "12px", color: "#FAFAF9" }} />
               <Bar dataKey="durationHours" fill="#818CF8" radius={[4, 4, 0, 0]} name="Sleep (hrs)" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Strain Trend */}
+      {strain && strain.length > 0 && (
+        <div className="bg-surface rounded-xl border border-border p-4 shadow-sm">
+          <h3 className="text-sm font-semibold text-text-primary mb-4">Strain Trend</h3>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={strain}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#44403C" vertical={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#A8A29E" }} tickLine={false} interval={0} />
+              <YAxis domain={[0, 21]} tick={{ fontSize: 11, fill: "#A8A29E" }} tickLine={false} />
+              <Tooltip contentStyle={{ backgroundColor: "#1C1917", border: "1px solid #44403C", borderRadius: "8px", fontSize: "12px", color: "#FAFAF9" }} />
+              <Bar dataKey="score" fill="#F59E0B" radius={[4, 4, 0, 0]} name="Strain" />
             </BarChart>
           </ResponsiveContainer>
         </div>

@@ -21,10 +21,16 @@ interface CompositeScore {
   breakdown: Record<string, number>;
 }
 
+interface StrainData {
+  date: string;
+  score: number;
+}
+
 interface WhoopApiResponse {
   connected: boolean;
   recovery: { date: string; recoveryScore: number; hrvRmssd: number; restingHr: number }[];
   sleep: { date: string; durationHours: number; performance: number }[];
+  strain: { date: string; score: number }[];
   latestRecovery: { score: number; hrv: number; restingHr: number } | null;
   latestStrain: { score: number; recommendation: string } | null;
   compositeScores?: {
@@ -45,6 +51,7 @@ export default function WhoopPage() {
     hrv: number;
     restingHr: number;
   } | null>(null);
+  const [strain, setStrain] = useState<StrainData[]>([]);
   const [latestStrain, setLatestStrain] = useState<{
     score: number;
     recommendation: string;
@@ -77,6 +84,12 @@ export default function WhoopPage() {
             date: new Date(s.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
             durationHours: s.durationHours ?? 0,
             performance: s.performance ?? 0,
+          }))
+        );
+        setStrain(
+          (data.strain ?? []).map((s) => ({
+            date: new Date(s.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+            score: s.score ?? 0,
           }))
         );
         setLatestRecovery(data.latestRecovery);
@@ -200,6 +213,7 @@ export default function WhoopPage() {
           <WhoopMetrics
             recovery={recovery}
             sleep={sleep}
+            strain={strain}
             latestRecovery={latestRecovery}
             latestStrain={latestStrain}
             compositeScores={compositeScores}

@@ -82,15 +82,15 @@ export default function MuscleDetailPanel({
               <p className="text-xs text-text-muted mt-1">{getScoreLabel(stats.developmentScore)}</p>
             </div>
             <div className="bg-surface-raised rounded-lg p-3 text-center">
-              {stats.populationPercentile !== null ? (
+              {stats.populationPercentile !== null && stats.populationPercentile > 0 ? (
                 <>
-                  <p className="text-2xl font-bold text-text-primary">{stats.populationPercentile}%</p>
-                  <p className="text-xs text-text-muted">Percentile</p>
+                  <p className="text-2xl font-bold text-green-500">{stats.populationPercentile}%</p>
+                  <p className="text-xs text-text-muted">Better than {stats.populationPercentile}% of population</p>
                 </>
               ) : (
                 <>
                   <p className="text-lg font-bold text-text-muted">--</p>
-                  <p className="text-xs text-text-muted">Percentile</p>
+                  <p className="text-xs text-text-muted">Log exercises to see ranking</p>
                 </>
               )}
             </div>
