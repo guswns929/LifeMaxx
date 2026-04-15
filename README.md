@@ -33,7 +33,7 @@
 ### Installation
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/LifeMaxx.git
+git clone https://github.com/guswns929LifeMaxx.git
 cd LifeMaxx
 npm install
 ```
