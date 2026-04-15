@@ -62,16 +62,28 @@ export default function MuscleDetailPage() {
     fetchData();
   }, [fetchData]);
 
+  // Include workouts where this muscle is primary OR secondary
   const muscleWorkouts = useMemo(
     () =>
       workouts.filter((w) =>
         w.exercises.some(
           (we) =>
-            we.exercise.primaryMuscles.includes(slug)
+            we.exercise.primaryMuscles.includes(slug) ||
+            (we.exercise.secondaryMuscles?.includes(slug) ?? false)
         )
       ),
     [workouts, slug]
   );
+
+  // Weighted workout count: primary = 1.0, secondary-only = 0.4
+  const effectiveCount = useMemo(() => {
+    let count = 0;
+    muscleWorkouts.forEach((w) => {
+      const hasPrimary = w.exercises.some((we) => we.exercise.primaryMuscles.includes(slug));
+      count += hasPrimary ? 1 : 0.4;
+    });
+    return count;
+  }, [muscleWorkouts, slug]);
 
   // Calculate e1RM progress data: best e1RM per workout
   const progressData = useMemo(() => {
@@ -98,7 +110,7 @@ export default function MuscleDetailPage() {
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [muscleWorkouts, slug]);
 
-  // Calculate weekly volume data
+  // Calculate weekly volume data (secondary exercises contribute 40% volume)
   const volumeData = useMemo(() => {
     const weeklyMap = new Map<string, number>();
     muscleWorkouts.forEach((w) => {
@@ -114,11 +126,14 @@ export default function MuscleDetailPage() {
       w.exercises
         .filter(
           (we) =>
-            we.exercise.primaryMuscles.includes(slug)
+            we.exercise.primaryMuscles.includes(slug) ||
+            (we.exercise.secondaryMuscles?.includes(slug) ?? false)
         )
         .forEach((we) => {
+          const isPrimary = we.exercise.primaryMuscles.includes(slug);
+          const multiplier = isPrimary ? 1.0 : 0.4;
           we.sets.forEach((s) => {
-            volume += s.weightKg * s.reps;
+            volume += s.weightKg * s.reps * multiplier;
           });
         });
 
@@ -142,7 +157,8 @@ export default function MuscleDetailPage() {
       w.exercises
         .filter(
           (we) =>
-            we.exercise.primaryMuscles.includes(slug)
+            we.exercise.primaryMuscles.includes(slug) ||
+            (we.exercise.secondaryMuscles?.includes(slug) ?? false)
         )
         .forEach((we) => {
           let bestWeight = 0;
@@ -171,9 +187,9 @@ export default function MuscleDetailPage() {
     return history;
   }, [muscleWorkouts, slug]);
 
-  // Stats
+  // Stats — weighted development score (secondary = 40% contribution)
   const totalWorkouts = muscleWorkouts.length;
-  const devScore = Math.min(100, totalWorkouts * 8);
+  const devScore = Math.min(100, Math.round(effectiveCount * 8));
   const lastTrained =
     muscleWorkouts.length > 0
       ? new Date(muscleWorkouts[0].date).toLocaleDateString("en-US", {

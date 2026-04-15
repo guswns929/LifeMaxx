@@ -55,11 +55,18 @@ export default function RecommendationsPage() {
       const muscleWorkouts = workouts.filter((w) =>
         w.exercises.some(
           (we) =>
-            we.exercise.primaryMuscles.includes(mg.slug)
+            we.exercise.primaryMuscles.includes(mg.slug) ||
+            (we.exercise.secondaryMuscles?.includes(mg.slug) ?? false)
         )
       );
 
-      const count = muscleWorkouts.length;
+      // Weighted count: primary = 1.0, secondary-only = 0.4
+      let effectiveCount = 0;
+      muscleWorkouts.forEach((w) => {
+        const hasPrimary = w.exercises.some((we) => we.exercise.primaryMuscles.includes(mg.slug));
+        effectiveCount += hasPrimary ? 1 : 0.4;
+      });
+      const count = Math.round(effectiveCount);
       let daysSinceLastTrained: number | null = null;
 
       if (muscleWorkouts.length > 0) {

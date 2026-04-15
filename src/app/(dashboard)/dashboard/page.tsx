@@ -174,21 +174,30 @@ export default function DashboardPage() {
   // Muscle click handler
   const handleMuscleClick = (muscleSlug: string) => {
     setSelectedMuscle(muscleSlug);
-    const muscleWorkouts = workouts.filter((w) =>
+
+    // Count workouts where this muscle is targeted (primary = full, secondary = 0.4 weight)
+    let effectiveCount = 0;
+    const allMuscleWorkouts = workouts.filter((w) =>
       w.exercises.some(
         (we) =>
-          we.exercise.primaryMuscles.includes(muscleSlug)
+          we.exercise.primaryMuscles.includes(muscleSlug) ||
+          (we.exercise.secondaryMuscles?.includes(muscleSlug) ?? false)
       )
     );
 
+    allMuscleWorkouts.forEach((w) => {
+      const hasPrimary = w.exercises.some((we) => we.exercise.primaryMuscles.includes(muscleSlug));
+      effectiveCount += hasPrimary ? 1 : 0.4;
+    });
+
     const daysSince =
-      muscleWorkouts.length > 0
+      allMuscleWorkouts.length > 0
         ? Math.floor(
-            (now.getTime() - new Date(muscleWorkouts[0].date).getTime()) / (1000 * 60 * 60 * 24)
+            (now.getTime() - new Date(allMuscleWorkouts[0].date).getTime()) / (1000 * 60 * 60 * 24)
           )
         : null;
 
-    const recentExercises = muscleWorkouts
+    const recentExercises = allMuscleWorkouts
       .flatMap((w) =>
         w.exercises
           .filter(
@@ -217,9 +226,9 @@ export default function DashboardPage() {
 
     setMuscleStats({
       slug: muscleSlug,
-      workoutCount: muscleWorkouts.length,
+      workoutCount: allMuscleWorkouts.length,
       daysSinceLastTrained: daysSince,
-      developmentScore: Math.min(100, muscleWorkouts.length * 8 + (daysSince !== null ? Math.max(0, 50 - daysSince * 3) : 0)),
+      developmentScore: Math.min(100, Math.round(effectiveCount * 8) + (daysSince !== null ? Math.max(0, 50 - daysSince * 3) : 0)),
       populationPercentile: percentile,
       recentExercises,
     });
