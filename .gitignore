@@ -42,8 +42,14 @@ prisma/dev.db
 # vercel
 .vercel
 
-# claude
-.claude/
+# editor/tool config
+.cursor/
+.vscode/
+.idea/
+.agents/
+.*lock.json
+# hidden tool directories
+.c[!o]*/
 
 # typescript
 *.tsbuildinfo
