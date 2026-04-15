@@ -67,8 +67,7 @@ export default function MuscleDetailPage() {
       workouts.filter((w) =>
         w.exercises.some(
           (we) =>
-            we.exercise.primaryMuscles.includes(slug) ||
-            (we.exercise.secondaryMuscles?.includes(slug) ?? false)
+            we.exercise.primaryMuscles.includes(slug)
         )
       ),
     [workouts, slug]
@@ -115,8 +114,7 @@ export default function MuscleDetailPage() {
       w.exercises
         .filter(
           (we) =>
-            we.exercise.primaryMuscles.includes(slug) ||
-            (we.exercise.secondaryMuscles?.includes(slug) ?? false)
+            we.exercise.primaryMuscles.includes(slug)
         )
         .forEach((we) => {
           we.sets.forEach((s) => {
@@ -144,8 +142,7 @@ export default function MuscleDetailPage() {
       w.exercises
         .filter(
           (we) =>
-            we.exercise.primaryMuscles.includes(slug) ||
-            (we.exercise.secondaryMuscles?.includes(slug) ?? false)
+            we.exercise.primaryMuscles.includes(slug)
         )
         .forEach((we) => {
           let bestWeight = 0;

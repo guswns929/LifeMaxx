@@ -177,8 +177,7 @@ export default function DashboardPage() {
     const muscleWorkouts = workouts.filter((w) =>
       w.exercises.some(
         (we) =>
-          we.exercise.primaryMuscles.includes(muscleSlug) ||
-          (we.exercise.secondaryMuscles?.includes(muscleSlug) ?? false)
+          we.exercise.primaryMuscles.includes(muscleSlug)
       )
     );
 

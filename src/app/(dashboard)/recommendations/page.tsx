@@ -55,8 +55,7 @@ export default function RecommendationsPage() {
       const muscleWorkouts = workouts.filter((w) =>
         w.exercises.some(
           (we) =>
-            we.exercise.primaryMuscles.includes(mg.slug) ||
-            (we.exercise.secondaryMuscles?.includes(mg.slug) ?? false)
+            we.exercise.primaryMuscles.includes(mg.slug)
         )
       );
 
