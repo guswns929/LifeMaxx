@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { parseLocalDate } from "@/lib/date-utils";
 
 export async function GET(
   _request: NextRequest,
@@ -68,7 +69,14 @@ export async function PUT(
       where: { id },
       data: {
         ...(date !== undefined && {
-          date: (() => { const d = new Date(date); d.setHours(0, 0, 0, 0); return d; })(),
+          date: (() => {
+            if (typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+              return parseLocalDate(date);
+            }
+            const d = new Date(date);
+            d.setHours(0, 0, 0, 0);
+            return d;
+          })(),
         }),
         ...(name !== undefined && { name }),
         ...(notes !== undefined && { notes }),

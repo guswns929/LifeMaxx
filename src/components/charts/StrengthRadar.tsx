@@ -29,7 +29,7 @@ export default function StrengthRadar({
       <h3 className="text-sm font-semibold text-text-primary mb-4">{title}</h3>
 
       {data.length > 0 ? (
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer width="100%" height={300} minWidth={0}>
           <RadarChart data={data} cx="50%" cy="50%" outerRadius="70%">
             <PolarGrid stroke="#44403C" />
             <PolarAngleAxis

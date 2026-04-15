@@ -74,7 +74,7 @@ export default function ProgressChart({
       </div>
 
       {displayData.length > 0 ? (
-        <ResponsiveContainer width="100%" height={240}>
+        <ResponsiveContainer width="100%" height={240} minWidth={0}>
           <LineChart data={displayData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#44403C" />
             <XAxis

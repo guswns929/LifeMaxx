@@ -3,13 +3,86 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { analyzeDailyPerformance, type DailyInput } from "@/lib/daily-analysis";
 import { calculateNutritionTargets, type ActivityLevel } from "@/lib/nutrition";
+import { parseLocalDate } from "@/lib/date-utils";
 
-export async function GET(_request: NextRequest) {
+/**
+ * GET — Fetch journal entries.
+ *   ?date=YYYY-MM-DD  → single entry with full analysis JSON
+ *   (no date)         → last 30 summary entries
+ */
+export async function GET(request: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user?.id)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const userId = session.user.id;
+
+    const dateParam = request.nextUrl.searchParams.get("date");
+
+    if (dateParam) {
+      // Return specific journal entry with full analysis
+      const entryDate = parseLocalDate(dateParam);
+      const entryDateEnd = new Date(entryDate);
+      entryDateEnd.setHours(23, 59, 59, 999);
+
+      const entry = await prisma.journalEntry.findFirst({
+        where: { userId, date: { gte: entryDate, lte: entryDateEnd } },
+      });
+
+      if (!entry) {
+        return NextResponse.json({ error: "No entry for this date" }, { status: 404 });
+      }
+
+      return NextResponse.json({
+        date: entry.date.toISOString(),
+        overallScore: entry.overallScore,
+        nutritionScore: entry.nutritionScore,
+        trainingScore: entry.trainingScore,
+        recoveryScore: entry.recoveryScore,
+        trendScore: entry.trendScore,
+        analysis: JSON.parse(entry.analysisJson),
+        recommendations: entry.recommendations ? JSON.parse(entry.recommendations) : [],
+      });
+    }
+
+    // Return all journal entries (summary)
+    const entries = await prisma.journalEntry.findMany({
+      where: { userId },
+      orderBy: { date: "desc" },
+      take: 30,
+    });
+    return NextResponse.json(
+      entries.map((e) => ({
+        date: e.date.toISOString(),
+        overallScore: e.overallScore,
+        nutritionScore: e.nutritionScore,
+        trainingScore: e.trainingScore,
+        recoveryScore: e.recoveryScore,
+        trendScore: e.trendScore,
+      }))
+    );
+  } catch (error) {
+    console.error("GET /api/daily-log error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+/**
+ * POST — Compile / generate the journal entry for a given date.
+ *   body: { date?: "YYYY-MM-DD" }  (defaults to today)
+ *
+ * This runs the full analysis, saves the journal entry, and returns
+ * the complete analysis object.
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id)
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const userId = session.user.id;
+
+    const body = await request.json().catch(() => ({}));
+    const dateStr: string | undefined = body.date;
 
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -20,58 +93,53 @@ export async function GET(_request: NextRequest) {
     const bodyWeightKg = user.bodyWeightKg ?? 80;
     const sex = (user.sex as "male" | "female") ?? "male";
 
-    // Today's boundaries in local time
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
+    // Target day boundaries in local time
+    const targetStart = dateStr ? parseLocalDate(dateStr) : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
+    const targetEnd = new Date(targetStart);
+    targetEnd.setHours(23, 59, 59, 999);
 
-    // 14-day lookback
-    const fourteenDaysAgo = new Date();
+    // 14-day lookback from target date
+    const fourteenDaysAgo = new Date(targetStart);
     fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
     fourteenDaysAgo.setHours(0, 0, 0, 0);
 
     // Fetch data in parallel
     const [
-      todayWorkouts,
+      dayWorkouts,
       recentWorkouts,
-      todayMeasurement,
+      dayMeasurement,
       recentMeasurements,
       whoopRecovery,
       whoopSleep,
       whoopStrain,
-      existingJournal,
     ] = await Promise.all([
       prisma.workout.findMany({
-        where: { userId, date: { gte: todayStart, lte: todayEnd } },
+        where: { userId, date: { gte: targetStart, lte: targetEnd } },
         include: { exercises: { include: { exercise: true, sets: true } } },
       }),
       prisma.workout.findMany({
-        where: { userId, date: { gte: fourteenDaysAgo } },
+        where: { userId, date: { gte: fourteenDaysAgo, lte: targetEnd } },
         include: { exercises: { include: { exercise: true, sets: true } } },
       }),
       prisma.bodyMeasurement.findFirst({
-        where: { userId, date: { gte: todayStart, lte: todayEnd } },
+        where: { userId, date: { gte: targetStart, lte: targetEnd } },
         orderBy: { date: "desc" },
       }),
       prisma.bodyMeasurement.findMany({
-        where: { userId, date: { gte: fourteenDaysAgo } },
+        where: { userId, date: { gte: fourteenDaysAgo, lte: targetEnd } },
         orderBy: { date: "asc" },
       }),
       prisma.whoopDatum.findFirst({
-        where: { userId, dataType: "recovery", date: { gte: todayStart, lte: todayEnd } },
+        where: { userId, dataType: "recovery", date: { gte: targetStart, lte: targetEnd } },
         orderBy: { date: "desc" },
       }),
       prisma.whoopDatum.findFirst({
-        where: { userId, dataType: "sleep", date: { gte: todayStart, lte: todayEnd } },
+        where: { userId, dataType: "sleep", date: { gte: targetStart, lte: targetEnd } },
         orderBy: { date: "desc" },
       }),
       prisma.whoopDatum.findFirst({
-        where: { userId, dataType: "strain", date: { gte: todayStart, lte: todayEnd } },
+        where: { userId, dataType: "strain", date: { gte: targetStart, lte: targetEnd } },
         orderBy: { date: "desc" },
-      }),
-      prisma.journalEntry.findFirst({
-        where: { userId, date: { gte: todayStart, lte: todayEnd } },
       }),
     ]);
 
@@ -86,31 +154,37 @@ export async function GET(_request: NextRequest) {
       }
     }
 
-    // Today's training data
-    let todaySets = 0;
-    const todayMusclesHit = new Set<string>();
-    const todayExercises: string[] = [];
-    let todayStrainScore: number | null = null;
+    // Target day's training data
+    let daySets = 0;
+    const dayMusclesHit = new Set<string>();
+    const dayExercises: string[] = [];
+    let dayStrainScore: number | null = null;
     let isCardioOrMisc = false;
     let whoopActivityStrain: number | null = null;
+    const whoopActivityTypes: string[] = [];
+    let cardioMinutes = 0;
 
-    todayWorkouts.forEach((w) => {
+    dayWorkouts.forEach((w) => {
       if (w.workoutType === "cardio" || w.workoutType === "misc") {
         isCardioOrMisc = true;
+        if (w.durationMin) cardioMinutes += w.durationMin;
       }
       if (w.strainScore) {
         whoopActivityStrain = (whoopActivityStrain ?? 0) + w.strainScore;
       }
+      if (w.activityType) {
+        whoopActivityTypes.push(w.activityType);
+      }
       w.exercises.forEach((we) => {
-        todayExercises.push(we.exercise.name);
+        dayExercises.push(we.exercise.name);
         const working = we.sets.filter((s) => !s.isWarmup);
-        todaySets += working.length;
-        parseMuscles(we.exercise.primaryMuscles).forEach((m) => todayMusclesHit.add(m));
+        daySets += working.length;
+        parseMuscles(we.exercise.primaryMuscles).forEach((m) => dayMusclesHit.add(m));
       });
     });
 
     if (whoopStrain?.strainScore) {
-      todayStrainScore = whoopStrain.strainScore;
+      dayStrainScore = whoopStrain.strainScore;
     }
 
     // 14-day trends
@@ -122,7 +196,7 @@ export async function GET(_request: NextRequest) {
     let consecutiveTrainingDays = 0;
     const trainingDateSet = new Set(recentWorkouts.map((w) => toLocalDate(new Date(w.date))));
     for (let i = 0; i <= 14; i++) {
-      const d = new Date();
+      const d = new Date(targetStart);
       d.setDate(d.getDate() - i);
       if (trainingDateSet.has(toLocalDate(d))) {
         consecutiveTrainingDays++;
@@ -146,7 +220,7 @@ export async function GET(_request: NextRequest) {
     // Sleep data
     const sleepHours = whoopSleep?.sleepDurationMs ? whoopSleep.sleepDurationMs / 3_600_000 : null;
     const recentSleepData = await prisma.whoopDatum.findMany({
-      where: { userId, dataType: "sleep", date: { gte: fourteenDaysAgo } },
+      where: { userId, dataType: "sleep", date: { gte: fourteenDaysAgo, lte: targetEnd } },
     });
     const sleepHoursArr = recentSleepData
       .map((s) => (s.sleepDurationMs ? s.sleepDurationMs / 3_600_000 : null))
@@ -156,7 +230,7 @@ export async function GET(_request: NextRequest) {
       : undefined;
 
     // Phase and nutrition targets
-    const phase = todayMeasurement?.phase as "cut" | "maintain" | "bulk" || "maintain";
+    const phase = dayMeasurement?.phase as "cut" | "maintain" | "bulk" || "maintain";
     const daysInPhase = recentMeasurements.filter((m) => m.phase === phase).length;
 
     const nutritionTargets = calculateNutritionTargets({
@@ -166,25 +240,27 @@ export async function GET(_request: NextRequest) {
       sex,
       activityLevel: "moderate" as ActivityLevel,
       phase,
-      whoopStrain: todayStrainScore,
+      whoopStrain: dayStrainScore,
     });
 
     // Build analysis input
     const dailyInput: DailyInput = {
-      calories: todayMeasurement?.calories ?? undefined,
+      calories: dayMeasurement?.calories ?? undefined,
       targetCalories: nutritionTargets.targetCalories,
-      proteinG: todayMeasurement?.proteinG ?? undefined,
+      proteinG: dayMeasurement?.proteinG ?? undefined,
       targetProteinG: nutritionTargets.proteinG,
-      carbsG: todayMeasurement?.carbsG ?? undefined,
-      fatG: todayMeasurement?.fatG ?? undefined,
+      carbsG: dayMeasurement?.carbsG ?? undefined,
+      fatG: dayMeasurement?.fatG ?? undefined,
       bodyWeightKg,
       phase,
-      todaySets,
-      todayMusclesHit: Array.from(todayMusclesHit),
-      todayExercises,
-      todayStrainScore,
+      todaySets: daySets,
+      todayMusclesHit: Array.from(dayMusclesHit),
+      todayExercises: dayExercises,
+      todayStrainScore: dayStrainScore,
       isCardioOrMisc,
       whoopActivityStrain,
+      whoopActivityTypes,
+      cardioMinutes: cardioMinutes > 0 ? cardioMinutes : undefined,
       whoopRecoveryScore: whoopRecovery?.recoveryScore ?? null,
       sleepHours,
       sleepPerformance: whoopSleep?.sleepPerformance ?? null,
@@ -200,7 +276,7 @@ export async function GET(_request: NextRequest) {
     const analysis = analyzeDailyPerformance(dailyInput);
 
     // Save/update journal entry
-    const journalDate = new Date(todayStart);
+    const journalDate = new Date(targetStart);
     await prisma.journalEntry.upsert({
       where: { userId_date: { userId, date: journalDate } },
       create: {
@@ -228,63 +304,14 @@ export async function GET(_request: NextRequest) {
     return NextResponse.json({
       analysis,
       nutritionTargets,
-      todayData: {
-        workouts: todayWorkouts.length,
-        sets: todaySets,
-        muscles: Array.from(todayMusclesHit),
-        hasNutrition: todayMeasurement != null,
+      dayData: {
+        workouts: dayWorkouts.length,
+        sets: daySets,
+        muscles: Array.from(dayMusclesHit),
+        hasNutrition: dayMeasurement != null,
         phase,
       },
       savedJournal: true,
-    });
-  } catch (error) {
-    console.error("GET /api/daily-log error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
-}
-
-// GET past journal entries
-export async function POST(request: NextRequest) {
-  try {
-    const session = await auth();
-    if (!session?.user?.id)
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const userId = session.user.id;
-
-    const { date } = await request.json();
-    if (!date) {
-      // Return all journal entries
-      const entries = await prisma.journalEntry.findMany({
-        where: { userId },
-        orderBy: { date: "desc" },
-        take: 30,
-      });
-      return NextResponse.json(entries.map((e) => ({
-        date: e.date.toISOString(),
-        overallScore: e.overallScore,
-        nutritionScore: e.nutritionScore,
-        trainingScore: e.trainingScore,
-        recoveryScore: e.recoveryScore,
-        trendScore: e.trendScore,
-      })));
-    }
-
-    // Return specific journal entry with full analysis
-    const entryDate = new Date(date);
-    entryDate.setHours(0, 0, 0, 0);
-    const entry = await prisma.journalEntry.findUnique({
-      where: { userId_date: { userId, date: entryDate } },
-    });
-
-    if (!entry) {
-      return NextResponse.json({ error: "No entry for this date" }, { status: 404 });
-    }
-
-    return NextResponse.json({
-      date: entry.date.toISOString(),
-      overallScore: entry.overallScore,
-      analysis: JSON.parse(entry.analysisJson),
-      recommendations: entry.recommendations ? JSON.parse(entry.recommendations) : [],
     });
   } catch (error) {
     console.error("POST /api/daily-log error:", error);

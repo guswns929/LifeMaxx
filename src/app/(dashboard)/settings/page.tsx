@@ -76,6 +76,7 @@ export default function SettingsPage() {
       } catch {
         setWhoopConnected(false);
       }
+
     } finally {
       setLoading(false);
     }
@@ -400,6 +401,7 @@ export default function SettingsPage() {
           </div>
         )}
       </div>
+
     </div>
   );
 }

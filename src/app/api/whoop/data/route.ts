@@ -50,10 +50,14 @@ export async function GET(_request: NextRequest) {
     const strainRecords = data.filter((d) => d.dataType === "strain");
 
     // Deduplicate by date (keep latest per calendar day)
+    // CRITICAL: Use local date parts, not UTC, to avoid off-by-one
+    function toLocalDateKey(d: Date): string {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
     function dedupeByDate<T extends { date: Date }>(records: T[]): T[] {
       const map = new Map<string, T>();
       for (const r of records) {
-        const key = r.date.toISOString().split("T")[0];
+        const key = toLocalDateKey(new Date(r.date));
         map.set(key, r); // last wins (records are asc, so latest entry per day)
       }
       return Array.from(map.values());
@@ -205,19 +209,19 @@ export async function GET(_request: NextRequest) {
     return NextResponse.json({
       connected: !!connection,
       recovery: dedupedRecovery.map((r) => ({
-        date: r.date.toISOString(),
+        date: toLocalDateKey(new Date(r.date)),
         recoveryScore: r.recoveryScore ?? 0,
         hrvRmssd: r.hrvRmssd ?? 0,
         restingHr: r.restingHr ?? 0,
       })),
       sleep: dedupedSleep.map((s) => ({
-        date: s.date.toISOString(),
+        date: toLocalDateKey(new Date(s.date)),
         durationHours: Math.round(((s.sleepDurationMs ?? 0) / 3_600_000) * 10) / 10,
         performance: s.sleepPerformance ?? 0,
         efficiency: s.sleepEfficiency ?? 0,
       })),
       strain: dedupedStrain.map((s) => ({
-        date: s.date.toISOString(),
+        date: toLocalDateKey(new Date(s.date)),
         score: s.strainScore ?? 0,
       })),
       latestRecovery: latestRecovery

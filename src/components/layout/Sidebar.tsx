@@ -113,10 +113,10 @@ export default function Sidebar({ user }: SidebarProps) {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-4">
         <ul className="space-y-1">
-          {navItems.map((item) => {
+          {navItems.map((item, idx) => {
             const active = isActive(item.href);
             return (
-              <li key={item.href}>
+              <li key={`${item.href}-${idx}`}>
                 <Link
                   href={item.href}
                   onClick={closeMobile}

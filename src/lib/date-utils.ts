@@ -77,3 +77,28 @@ export function getWeekStart(d: Date): Date {
 export function isSameDay(a: Date | string, b: Date | string): boolean {
   return toLocalDateString(a) === toLocalDateString(b);
 }
+
+/**
+ * Parse a YYYY-MM-DD string as a LOCAL date at midnight.
+ *
+ * CRITICAL: `new Date("2026-04-15")` parses as UTC midnight, which in negative
+ * UTC offsets (Americas) becomes the PREVIOUS day when read in local time.
+ * This function avoids that by constructing the date from parts.
+ */
+export function parseLocalDate(dateStr: string): Date {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return new Date(year, month - 1, day, 0, 0, 0, 0);
+}
+
+/**
+ * Convert a UTC timestamp to local calendar day at midnight.
+ *
+ * Use this for WHOOP daily data (recovery, strain, sleep) where the API
+ * returns UTC timestamps that represent calendar dates. Extracts the UTC
+ * date parts and creates a local midnight to prevent off-by-one errors.
+ */
+export function utcDateToLocalMidnight(d: Date | string): Date {
+  const date = typeof d === "string" ? new Date(d) : d;
+  // Use UTC parts so "April 15 00:00 UTC" always → "April 15 00:00 local"
+  return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0);
+}

@@ -63,7 +63,7 @@ export default function WeightTracker({ data, units }: WeightTrackerProps) {
       <h3 className="text-sm font-semibold text-text-primary mb-4">Body Weight & Training Volume</h3>
 
       {displayData.length > 0 ? (
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer width="100%" height={300} minWidth={0}>
           <ComposedChart data={displayData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#44403C" />
             {phaseRegions.map((r, i) => (

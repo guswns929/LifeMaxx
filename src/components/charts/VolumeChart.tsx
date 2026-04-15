@@ -29,7 +29,7 @@ export default function VolumeChart({
       <h3 className="text-sm font-semibold text-text-primary mb-4">{title}</h3>
 
       {data.length > 0 ? (
-        <ResponsiveContainer width="100%" height={200}>
+        <ResponsiveContainer width="100%" height={200} minWidth={0}>
           <BarChart data={data}>
             <CartesianGrid strokeDasharray="3 3" stroke="#44403C" vertical={false} />
             <XAxis

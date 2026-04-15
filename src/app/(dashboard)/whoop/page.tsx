@@ -70,10 +70,17 @@ export default function WhoopPage() {
       setConnected(data.connected);
 
       if (data.connected) {
+        // Format date strings for chart labels
+        // API now returns YYYY-MM-DD local dates; parse with parts to avoid UTC shift
+        function formatDateLabel(dateStr: string): string {
+          const [y, m, d] = dateStr.split("-").map(Number);
+          return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        }
+
         // Format recovery data for charts
         setRecovery(
           (data.recovery ?? []).map((r) => ({
-            date: new Date(r.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+            date: formatDateLabel(r.date),
             recoveryScore: r.recoveryScore ?? 0,
             hrvRmssd: r.hrvRmssd ?? 0,
             restingHr: r.restingHr ?? 0,
@@ -81,14 +88,14 @@ export default function WhoopPage() {
         );
         setSleep(
           (data.sleep ?? []).map((s) => ({
-            date: new Date(s.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+            date: formatDateLabel(s.date),
             durationHours: s.durationHours ?? 0,
             performance: s.performance ?? 0,
           }))
         );
         setStrain(
           (data.strain ?? []).map((s) => ({
-            date: new Date(s.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+            date: formatDateLabel(s.date),
             score: s.score ?? 0,
           }))
         );
@@ -200,8 +207,8 @@ export default function WhoopPage() {
             {syncMessage && (
               <p
                 className={`mt-3 text-sm ${
-                  syncMessage.includes("complete")
-                    ? "text-green-600"
+                  syncMessage.includes("Synced") || syncMessage.includes("complete")
+                    ? "text-green-500"
                     : "text-red-500"
                 }`}
               >

@@ -97,8 +97,8 @@ function ScoreDonut({ score, label, color, breakdown }: {
     <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
       <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">{label}</h3>
       <div className="flex items-center gap-4">
-        <div className="relative w-28 h-28 shrink-0">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="relative shrink-0" style={{ width: 112, height: 112 }}>
+          <ResponsiveContainer width="100%" height={112} minWidth={0}>
             <PieChart>
               <Pie
                 data={data}
@@ -233,7 +233,7 @@ export default function WhoopMetrics({
       {recoveryChart.length > 0 && (
         <div className="bg-surface rounded-xl border border-border p-4 shadow-sm">
           <h3 className="text-sm font-semibold text-text-primary mb-4">HRV Trend</h3>
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={200} minWidth={0}>
             <LineChart data={recoveryChart}>
               <CartesianGrid strokeDasharray="3 3" stroke="#44403C" />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#A8A29E" }} tickLine={false} interval={0} />
@@ -249,7 +249,7 @@ export default function WhoopMetrics({
       {sleepChart.length > 0 && (
         <div className="bg-surface rounded-xl border border-border p-4 shadow-sm">
           <h3 className="text-sm font-semibold text-text-primary mb-4">Sleep Duration</h3>
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={200} minWidth={0}>
             <BarChart data={sleepChart}>
               <CartesianGrid strokeDasharray="3 3" stroke="#44403C" vertical={false} />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#A8A29E" }} tickLine={false} interval={0} />
@@ -265,7 +265,7 @@ export default function WhoopMetrics({
       {strain && strain.length > 0 && (
         <div className="bg-surface rounded-xl border border-border p-4 shadow-sm">
           <h3 className="text-sm font-semibold text-text-primary mb-4">Strain Trend</h3>
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={200} minWidth={0}>
             <BarChart data={strain}>
               <CartesianGrid strokeDasharray="3 3" stroke="#44403C" vertical={false} />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#A8A29E" }} tickLine={false} interval={0} />

@@ -31,6 +31,8 @@ export interface DailyInput {
   workoutType?: string; // "strength" | "cardio" | "misc"
   isCardioOrMisc?: boolean; // true if today had cardio/misc workouts
   whoopActivityStrain?: number | null; // strain from any WHOOP-tracked strenuous activity
+  whoopActivityTypes?: string[]; // WHOOP sport_id values for today's activities
+  cardioMinutes?: number; // total minutes of cardio/misc activities
 
   // Recovery
   whoopRecoveryScore?: number | null;
@@ -219,9 +221,18 @@ function scoreTraining(input: DailyInput): { score: ScoreExplanation; verdicts: 
   const verdicts: Verdict[] = [];
   const factors: ScoreExplanation["factors"] = [];
 
-  // Volume assessment (strength workouts)
+  // Volume assessment — considers both strength sets and cardio/strain
   let volumeScore = 50;
-  if (input.todaySets > 0) {
+  const hasStrengthWork = input.todaySets > 0;
+  const hasCardioWork = input.isCardioOrMisc || (input.whoopActivityStrain ?? 0) > 5;
+  const cardioMin = input.cardioMinutes ?? 0;
+
+  if (hasStrengthWork && hasCardioWork) {
+    // Mixed session: score both components
+    const strengthComponent = input.todaySets >= 4 && input.todaySets <= 25 ? 90 : input.todaySets < 4 ? 60 : 70;
+    const cardioComponent = cardioMin >= 20 ? 85 : cardioMin >= 10 ? 70 : 60;
+    volumeScore = Math.round(strengthComponent * 0.6 + cardioComponent * 0.4);
+  } else if (hasStrengthWork) {
     if (input.todaySets >= 4 && input.todaySets <= 25) {
       volumeScore = 90;
     } else if (input.todaySets < 4) {
@@ -236,19 +247,28 @@ function scoreTraining(input: DailyInput): { score: ScoreExplanation; verdicts: 
         evidence: "Schoenfeld et al., 2017 — Dose-response relationship of weekly resistance training volume",
       });
     }
-  } else if (input.isCardioOrMisc) {
-    // Cardio/misc workouts get scored on effort/strain
-    volumeScore = 70;
+  } else if (hasCardioWork) {
+    // Pure cardio/misc day — score based on strain and duration
+    const strainVal = input.whoopActivityStrain ?? input.todayStrainScore ?? 0;
+    if (strainVal >= 8 && strainVal <= 16) volumeScore = 85;
+    else if (strainVal >= 5) volumeScore = 75;
+    else if (cardioMin >= 30) volumeScore = 80;
+    else volumeScore = 65;
   }
+
+  const volumeDetail = (() => {
+    const parts: string[] = [];
+    if (hasStrengthWork) parts.push(`${input.todaySets} sets across ${input.todayMusclesHit.length} muscles`);
+    if (hasCardioWork && cardioMin > 0) parts.push(`${cardioMin}min cardio/misc`);
+    if (parts.length > 0) return parts.join(" + ");
+    return input.isCardioOrMisc ? "Cardio/misc workout logged" : "Rest day";
+  })();
+
   factors.push({
     name: "Session Volume",
     value: volumeScore,
     maxValue: 100,
-    detail: input.todaySets > 0
-      ? `${input.todaySets} working sets across ${input.todayMusclesHit.length} muscle groups`
-      : input.isCardioOrMisc
-      ? `Cardio/misc workout logged`
-      : "Rest day",
+    detail: volumeDetail,
   });
 
   // Strain-aware training

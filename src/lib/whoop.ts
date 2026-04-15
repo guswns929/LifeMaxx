@@ -35,7 +35,10 @@ export async function getValidToken(userId: string): Promise<string> {
   const conn = await prisma.whoopConnection.findUnique({ where: { userId } });
   if (!conn) throw new Error("WHOOP not connected");
 
-  if (new Date() >= conn.expiresAt) {
+  // Add 60s buffer to prevent using a token that's about to expire
+  const expiresWithBuffer = new Date(conn.expiresAt.getTime() - 60_000);
+  if (new Date() >= expiresWithBuffer) {
+    console.log("WHOOP token expired or expiring soon, refreshing...");
     const res = await fetch(WHOOP_TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -46,14 +49,18 @@ export async function getValidToken(userId: string): Promise<string> {
         refresh_token: conn.refreshToken,
       }),
     });
-    if (!res.ok) throw new Error("Token refresh failed");
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "unknown");
+      console.error(`WHOOP token refresh failed (${res.status}):`, errText);
+      throw new Error(`Token refresh failed: ${res.status} — ${errText}`);
+    }
     const tokens = await res.json();
     await prisma.whoopConnection.update({
       where: { userId },
       data: {
         accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token,
-        expiresAt: new Date(Date.now() + tokens.expires_in * 1000),
+        refreshToken: tokens.refresh_token ?? conn.refreshToken,
+        expiresAt: new Date(Date.now() + (tokens.expires_in ?? 3600) * 1000),
       },
     });
     return tokens.access_token;

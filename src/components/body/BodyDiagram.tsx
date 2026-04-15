@@ -53,8 +53,8 @@ const MUSCLE_NAMES: Record<string, string> = {
 // Color scales for the two modes
 // Weekly: strain-based (blue -> yellow -> orange -> red)
 const WEEKLY_COLORS = ["#60A5FA", "#FACC15", "#F97316", "#EF4444", "#DC2626"];
-// Overall: development-based (wider gradient from grey through green to gold)
-const OVERALL_COLORS = ["#6B7280", "#22C55E", "#16A34A", "#EAB308", "#F59E0B"];
+// Overall: development-based (teal → violet → magenta → amber spectrum)
+const OVERALL_COLORS = ["#475569", "#06B6D4", "#8B5CF6", "#EC4899", "#F59E0B"];
 
 export default function BodyDiagram({ data, overallData, mode = "weekly", onModeChange, onMuscleClick }: BodyDiagramProps) {
   const [view, setView] = useState<"anterior" | "posterior">("anterior");
@@ -265,7 +265,7 @@ export default function BodyDiagram({ data, overallData, mode = "weekly", onMode
                 <>
                   <div>{info.label}</div>
                   {info.detail && (
-                    <div className={mode === "overall" ? "text-amber-400 text-[10px]" : "text-green-400 text-[10px]"}>
+                    <div className={mode === "overall" ? "text-cyan-400 text-[10px]" : "text-green-400 text-[10px]"}>
                       {info.detail}
                     </div>
                   )}
@@ -292,12 +292,14 @@ export default function BodyDiagram({ data, overallData, mode = "weekly", onMode
         <div className="flex items-center gap-1.5 mt-3 text-[10px] text-text-muted">
           <div className="w-3 h-3 rounded bg-[#44403C]" />
           <span>No Data</span>
-          <div className="w-3 h-3 rounded bg-[#6B7280] ml-2" />
+          <div className="w-3 h-3 rounded bg-[#475569] ml-2" />
           <span>Beginner</span>
-          <div className="w-3 h-3 rounded bg-[#22C55E] ml-1" />
+          <div className="w-3 h-3 rounded bg-[#06B6D4] ml-1" />
           <span>Developing</span>
-          <div className="w-3 h-3 rounded bg-[#EAB308] ml-1" />
-          <span>Strong</span>
+          <div className="w-3 h-3 rounded bg-[#8B5CF6] ml-1" />
+          <span>Intermediate</span>
+          <div className="w-3 h-3 rounded bg-[#EC4899] ml-1" />
+          <span>Advanced</span>
           <div className="w-3 h-3 rounded bg-[#F59E0B] ml-1" />
           <span>Elite</span>
         </div>

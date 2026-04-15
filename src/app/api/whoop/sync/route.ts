@@ -9,6 +9,54 @@ import {
   fetchWorkoutData,
 } from "@/lib/whoop";
 
+/**
+ * WHOOP sport_id → workout type + name mapping.
+ * Source: WHOOP API v2 sport_id enum
+ *   -1 = "Activity" (unknown/misc)
+ *   0 = Running, 1 = Cycling, 33 = Swimming, 36 = Volleyball, etc.
+ *   Strength-type: 44 = Weightlifting, 71 = CrossFit, 123 = Functional Fitness
+ *   Cardio-type: 0 = Running, 1 = Cycling, 33 = Swimming, etc.
+ */
+const WHOOP_ACTIVITY_MAP: Record<string, { type: "strength" | "cardio" | "misc"; name: string; muscles?: string[] }> = {
+  "-1": { type: "misc", name: "Activity" },
+  "0": { type: "cardio", name: "Running", muscles: ["quadriceps", "hamstring", "calves", "gluteal"] },
+  "1": { type: "cardio", name: "Cycling", muscles: ["quadriceps", "hamstring", "calves", "gluteal"] },
+  "2": { type: "cardio", name: "Rowing", muscles: ["upper-back", "biceps", "quadriceps", "abs"] },
+  "3": { type: "cardio", name: "Hiking", muscles: ["quadriceps", "hamstring", "calves", "gluteal"] },
+  "5": { type: "cardio", name: "Elliptical", muscles: ["quadriceps", "hamstring", "gluteal"] },
+  "6": { type: "cardio", name: "Stairmaster", muscles: ["quadriceps", "gluteal", "calves"] },
+  "16": { type: "cardio", name: "Swimming", muscles: ["upper-back", "chest", "front-deltoids", "triceps"] },
+  "17": { type: "misc", name: "Yoga", muscles: ["abs", "lower-back", "hamstring"] },
+  "22": { type: "misc", name: "Stretching" },
+  "25": { type: "cardio", name: "Jump Rope", muscles: ["calves", "quadriceps", "forearm"] },
+  "33": { type: "cardio", name: "Skiing", muscles: ["quadriceps", "hamstring", "gluteal", "abs"] },
+  "36": { type: "cardio", name: "Volleyball", muscles: ["front-deltoids", "quadriceps", "calves", "abs"] },
+  "37": { type: "cardio", name: "Tennis", muscles: ["forearm", "front-deltoids", "quadriceps", "calves"] },
+  "38": { type: "cardio", name: "Basketball", muscles: ["quadriceps", "calves", "gluteal", "hamstring"] },
+  "39": { type: "cardio", name: "Soccer", muscles: ["quadriceps", "hamstring", "calves", "gluteal"] },
+  "42": { type: "cardio", name: "Lacrosse", muscles: ["quadriceps", "front-deltoids", "forearm"] },
+  "43": { type: "cardio", name: "Field Hockey", muscles: ["quadriceps", "hamstring", "lower-back"] },
+  "44": { type: "strength", name: "Weightlifting" },
+  "47": { type: "cardio", name: "Boxing", muscles: ["chest", "front-deltoids", "triceps", "abs", "calves"] },
+  "48": { type: "cardio", name: "Martial Arts", muscles: ["abs", "quadriceps", "hamstring", "gluteal"] },
+  "52": { type: "cardio", name: "Dance", muscles: ["calves", "quadriceps", "gluteal"] },
+  "55": { type: "cardio", name: "Spin", muscles: ["quadriceps", "hamstring", "calves", "gluteal"] },
+  "63": { type: "misc", name: "Pilates", muscles: ["abs", "obliques", "lower-back", "gluteal"] },
+  "71": { type: "strength", name: "CrossFit" },
+  "73": { type: "cardio", name: "HIIT", muscles: ["quadriceps", "gluteal", "abs", "chest"] },
+  "82": { type: "misc", name: "Meditation" },
+  "84": { type: "misc", name: "Breathwork" },
+  "123": { type: "strength", name: "Functional Fitness" },
+};
+
+function getActivityInfo(sportId: string | null | undefined): { type: "strength" | "cardio" | "misc"; name: string; muscles: string[] } {
+  const key = sportId ?? "-1";
+  const mapped = WHOOP_ACTIVITY_MAP[key];
+  if (mapped) return { type: mapped.type, name: mapped.name, muscles: mapped.muscles ?? [] };
+  // Default unknown activities to misc
+  return { type: "misc", name: `Activity ${key}`, muscles: [] };
+}
+
 export async function POST(_request: NextRequest) {
   try {
     const session = await auth();
@@ -25,10 +73,10 @@ export async function POST(_request: NextRequest) {
 
     const results = { recovery: 0, strain: 0, sleep: 0, workouts: 0, errors: [] as string[] };
 
-    // Normalize a date to local midnight for consistent daily deduplication
-    // Using local time prevents off-by-one errors when WHOOP returns UTC
-    // timestamps that fall on a different calendar day in the user's timezone
-    function toMidnight(d: Date): Date {
+    // Normalize to local midnight for consistent daily deduplication.
+    // WHOOP returns ISO timestamps representing real moments in time.
+    // We extract the LOCAL calendar date the event occurred on.
+    function toLocalMidnight(d: Date): Date {
       const m = new Date(d);
       m.setHours(0, 0, 0, 0);
       return m;
@@ -42,7 +90,7 @@ export async function POST(_request: NextRequest) {
         for (const cycle of cycleRecords) {
           const score = cycle.score;
           if (!score) continue;
-          const date = toMidnight(new Date(cycle.created_at || cycle.start || cycle.updated_at));
+          const date = toLocalMidnight(new Date(cycle.created_at || cycle.start || cycle.updated_at));
           await prisma.whoopDatum.upsert({
             where: { userId_date_dataType: { userId, date, dataType: "recovery" } },
             create: {
@@ -75,7 +123,7 @@ export async function POST(_request: NextRequest) {
         for (const cycle of cycles) {
           const score = cycle.score;
           if (!score?.strain) continue;
-          const date = toMidnight(new Date(cycle.start || cycle.created_at));
+          const date = toLocalMidnight(new Date(cycle.start || cycle.created_at));
           await prisma.whoopDatum.upsert({
             where: { userId_date_dataType: { userId, date, dataType: "strain" } },
             create: {
@@ -101,7 +149,7 @@ export async function POST(_request: NextRequest) {
       const sleepRecords = sleepData.records || sleepData;
       if (Array.isArray(sleepRecords)) {
         for (const s of sleepRecords) {
-          const date = toMidnight(new Date(s.start || s.created_at));
+          const date = toLocalMidnight(new Date(s.start || s.created_at));
           await prisma.whoopDatum.upsert({
             where: { userId_date_dataType: { userId, date, dataType: "sleep" } },
             create: {
@@ -136,20 +184,32 @@ export async function POST(_request: NextRequest) {
           const activityId = String(w.id);
           // Use local midnight so the workout appears on the correct calendar day
           const rawDate = new Date(w.start || w.created_at);
-          const date = toMidnight(rawDate);
+          const date = toLocalMidnight(rawDate);
+
+          // Map WHOOP sport_id to workout type and display name
+          const sportId = w.sport_id?.toString() ?? null;
+          const activityInfo = getActivityInfo(sportId);
 
           // Per-workout strain is stored on the Workout record, not WhoopDatum
           // Daily strain comes from the cycle sync above
+          // Check if user has already customized this workout's name/type
+          const existing = await prisma.workout.findUnique({
+            where: { whoopActivityId: activityId },
+            select: { name: true, workoutType: true, isDetailed: true },
+          });
+
           await prisma.workout.upsert({
             where: { whoopActivityId: activityId },
             create: {
               userId, date,
               whoopActivityId: activityId,
+              name: activityInfo.name !== "Activity" ? activityInfo.name : null,
+              workoutType: activityInfo.type,
               strainScore: w.score?.strain ?? null,
               avgHeartRate: w.score?.average_heart_rate ?? null,
               maxHeartRate: w.score?.max_heart_rate ?? null,
               calories: w.score?.kilojoule ? w.score.kilojoule / 4.184 : null,
-              activityType: w.sport_id?.toString() ?? null,
+              activityType: sportId,
               durationMin: w.end ? Math.round((new Date(w.end).getTime() - rawDate.getTime()) / 60000) : null,
             },
             update: {
@@ -157,7 +217,10 @@ export async function POST(_request: NextRequest) {
               avgHeartRate: w.score?.average_heart_rate ?? null,
               maxHeartRate: w.score?.max_heart_rate ?? null,
               calories: w.score?.kilojoule ? w.score.kilojoule / 4.184 : null,
-              activityType: w.sport_id?.toString() ?? null,
+              activityType: sportId,
+              // Only update name/type if user hasn't customized them
+              ...(existing && !existing.isDetailed ? {} : {}),
+              ...(!existing ? { name: activityInfo.name !== "Activity" ? activityInfo.name : null, workoutType: activityInfo.type } : {}),
             },
           });
           results.workouts++;
