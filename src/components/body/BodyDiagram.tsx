@@ -177,7 +177,7 @@ export default function BodyDiagram({ data, onMuscleClick }: BodyDiagramProps) {
             }
           }}
           type={view}
-          highlightedColors={["#86EFAC", "#4ADE80", "#22C55E", "#16A34A", "#15803D"]}
+          highlightedColors={["#60A5FA", "#FACC15", "#F97316", "#EF4444", "#DC2626"]}
           bodyColor="#44403C"
         />
 
@@ -204,11 +204,11 @@ export default function BodyDiagram({ data, onMuscleClick }: BodyDiagramProps) {
       <div className="flex items-center gap-1.5 mt-3 text-[10px] text-text-muted">
         <div className="w-3 h-3 rounded bg-[#44403C]" />
         <span>Untrained</span>
-        <div className="w-3 h-3 rounded bg-[#86EFAC] ml-2" />
+        <div className="w-3 h-3 rounded bg-[#60A5FA] ml-2" />
         <span>Light</span>
-        <div className="w-3 h-3 rounded bg-[#22C55E] ml-1" />
+        <div className="w-3 h-3 rounded bg-[#FACC15] ml-1" />
         <span>Moderate</span>
-        <div className="w-3 h-3 rounded bg-[#15803D] ml-1" />
+        <div className="w-3 h-3 rounded bg-[#EF4444] ml-1" />
         <span>Heavy</span>
       </div>
       <p className="text-xs text-text-muted mt-1">Click a muscle group for details</p>
