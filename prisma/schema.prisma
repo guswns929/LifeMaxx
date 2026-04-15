@@ -25,6 +25,7 @@ model User {
   whoopConnection  WhoopConnection?
   whoopData        WhoopDatum[]
   customExercises  Exercise[]       @relation("CustomExercises")
+  rankEvaluations  RankEvaluation[]
 }
 
 model Workout {
@@ -119,6 +120,25 @@ model BodyMeasurement {
   proteinG   Float?   // grams
   carbsG     Float?   // grams
   fatG       Float?   // grams
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model RankEvaluation {
+  id            String   @id @default(cuid())
+  userId        String
+  date          DateTime @default(now())
+  // 1RM attempts (kg)
+  benchPressKg  Float?
+  squatKg       Float?
+  deadliftKg    Float?
+  // Computed
+  totalKg       Float?   // sum of best lifts
+  wilksScore    Float?   // bodyweight-normalized score
+  rank          String?  // "Iron" | "Bronze" | "Silver" | "Gold" | "Platinum" | "Diamond" | "Champion"
+  rankScore     Float?   // 0-100 composite rank score
+  bodyWeightKg  Float?   // weight at time of evaluation
+  notes         String?
 
   user User @relation(fields: [userId], references: [id])
 }

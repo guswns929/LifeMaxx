@@ -49,6 +49,15 @@ const navItems = [
     ),
   },
   {
+    label: "Ranked",
+    href: "/ranked",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9 2l2.1 4.3 4.9.7-3.5 3.4.8 4.8L9 13l-4.3 2.2.8-4.8L2 7l4.9-.7z" />
+      </svg>
+    ),
+  },
+  {
     label: "Recommendations",
     href: "/recommendations",
     icon: (

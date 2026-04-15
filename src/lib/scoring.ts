@@ -1,12 +1,31 @@
-// Development Score Algorithm
-// Composite of 4 sub-scores, each 0-100, weighted to produce final 0-100 score
+/**
+ * Adaptive Development Score Algorithm
+ *
+ * Personalizes scoring based on user profile (age, sex, body weight, training age)
+ * and workout history. The algorithm adapts targets as the user progresses,
+ * ensuring continuous challenge.
+ *
+ * Components (weighted):
+ *   1. Strength Level (30%) — e1RM vs age/sex/weight-adjusted standards
+ *   2. Progressive Overload (25%) — are you consistently adding load or volume?
+ *   3. Training Consistency (20%) — frequency relative to optimal for your level
+ *   4. Volume Progression (15%) — weekly volume trend over 8 weeks
+ *   5. Recency (10%) — exponential decay, trains urgency
+ *
+ * The algorithm raises targets as you improve:
+ *   - Optimal frequency increases with level (beginner: 2x/wk → advanced: 4x/wk)
+ *   - Overload expectations scale (beginner: 5%/mo → advanced: 1%/mo)
+ *   - Score "compresses" at higher levels (harder to maintain 80+ as you advance)
+ */
 
 export interface DevelopmentScore {
   overall: number;
-  volumeTrend: number;
   strengthLevel: number;
-  frequency: number;
+  progressiveOverload: number;
+  consistency: number;
+  volumeTrend: number;
   recency: number;
+  nextMilestone: string; // personalized challenge text
 }
 
 export interface WeeklyVolume {
@@ -20,97 +39,355 @@ export interface SetData {
   date: Date;
 }
 
+export interface UserProfile {
+  bodyWeightKg: number;
+  sex: "male" | "female";
+  ageYears: number;
+  trainingMonths: number; // derived from first workout date
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-// Epley formula for estimated 1RM
+// ── e1RM Estimation ──────────────────────────────────────────────────
+
 export function calculateE1RM(weight: number, reps: number): number {
   if (reps <= 0) return 0;
   if (reps === 1) return weight;
-  if (reps <= 15) {
-    return weight * (1 + reps / 30);
-  }
-  // Brzycki for high rep ranges
-  return weight * (36 / (37 - reps));
+  if (reps <= 15) return weight * (1 + reps / 30); // Epley
+  return weight * (36 / (37 - reps)); // Brzycki
 }
 
-// Sub-score 1: Volume Load Trend (35%)
-// Linear regression on 8 weeks of volume data
+// ── Age Adjustment Factor ────────────────────────────────────────────
+// Masters lifters lose ~1-2% strength per year after 40 (Pearson et al., 2002)
+// Youth lifters (<18) haven't peaked; adjust expectations down
+
+function ageAdjustment(ageYears: number): number {
+  if (ageYears < 16) return 0.70;
+  if (ageYears < 18) return 0.82;
+  if (ageYears < 24) return 0.95;
+  if (ageYears <= 39) return 1.0; // peak years
+  if (ageYears <= 49) return 0.95;
+  if (ageYears <= 59) return 0.88;
+  if (ageYears <= 69) return 0.78;
+  return 0.68;
+}
+
+// ── 1. Strength Level (30%) ──────────────────────────────────────────
+// Compares e1RM to age-adjusted standards
+
+export function calcStrengthLevelScore(
+  e1rm: number,
+  standards: { beginner: number; novice: number; intermediate: number; advanced: number; elite: number } | null,
+  profile?: UserProfile
+): number {
+  if (!standards || e1rm <= 0) return 0;
+
+  const ageFactor = profile ? ageAdjustment(profile.ageYears) : 1.0;
+  const adj = {
+    beginner: standards.beginner * ageFactor,
+    novice: standards.novice * ageFactor,
+    intermediate: standards.intermediate * ageFactor,
+    advanced: standards.advanced * ageFactor,
+    elite: standards.elite * ageFactor,
+  };
+
+  if (e1rm < adj.beginner) return clamp((e1rm / adj.beginner) * 20, 0, 20);
+  if (e1rm < adj.novice) return 20 + ((e1rm - adj.beginner) / (adj.novice - adj.beginner)) * 15;
+  if (e1rm < adj.intermediate) return 35 + ((e1rm - adj.novice) / (adj.intermediate - adj.novice)) * 15;
+  if (e1rm < adj.advanced) return 50 + ((e1rm - adj.intermediate) / (adj.advanced - adj.intermediate)) * 20;
+  if (e1rm < adj.elite) return 70 + ((e1rm - adj.advanced) / (adj.elite - adj.advanced)) * 15;
+  return clamp(85 + ((e1rm - adj.elite) / adj.elite) * 100, 85, 100);
+}
+
+// ── 2. Progressive Overload (25%) ────────────────────────────────────
+// Tracks whether the user is adding weight/reps over time
+// Expected rate decreases with training age (diminishing returns)
+
+export function calcProgressiveOverloadScore(
+  recentE1RMs: { date: Date; e1rm: number }[],
+  profile?: UserProfile
+): number {
+  if (recentE1RMs.length < 2) return 50; // neutral if not enough data
+
+  // Sort chronologically
+  const sorted = [...recentE1RMs].sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  // Use last 12 data points max
+  const recent = sorted.slice(-12);
+  const n = recent.length;
+
+  // Linear regression on e1rm over time
+  const xs = recent.map((_, i) => i);
+  const ys = recent.map((r) => r.e1rm);
+  const meanX = xs.reduce((a, b) => a + b, 0) / n;
+  const meanY = ys.reduce((a, b) => a + b, 0) / n;
+
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++) {
+    num += (xs[i] - meanX) * (ys[i] - meanY);
+    den += (xs[i] - meanX) ** 2;
+  }
+  if (den === 0 || meanY === 0) return 50;
+
+  const slope = num / den;
+  const monthlyChangeRate = (slope * 4) / meanY; // ~4 data points per month estimate
+
+  // Expected monthly improvement rate based on training age
+  const trainingMonths = profile?.trainingMonths ?? 6;
+  let expectedRate: number;
+  if (trainingMonths < 6) expectedRate = 0.05;      // 5%/month beginner
+  else if (trainingMonths < 18) expectedRate = 0.025; // 2.5%/month intermediate
+  else if (trainingMonths < 36) expectedRate = 0.012; // 1.2%/month advanced
+  else expectedRate = 0.005;                           // 0.5%/month elite
+
+  // Score: how well are you meeting expected overload?
+  const ratio = monthlyChangeRate / expectedRate;
+  return clamp(Math.round(50 + ratio * 40), 0, 100);
+}
+
+// ── 3. Training Consistency (20%) ────────────────────────────────────
+// Optimal frequency adapts to level
+
+export function calcConsistencyScore(
+  avgWeeklyFrequency: number,
+  profile?: UserProfile
+): number {
+  const trainingMonths = profile?.trainingMonths ?? 6;
+
+  // Optimal frequency increases with experience
+  let optimalFreq: number;
+  if (trainingMonths < 3) optimalFreq = 2;
+  else if (trainingMonths < 12) optimalFreq = 3;
+  else if (trainingMonths < 24) optimalFreq = 4;
+  else optimalFreq = 5;
+
+  const ratio = avgWeeklyFrequency / optimalFreq;
+
+  // Over-training penalty: >1.3x optimal starts decreasing score
+  if (ratio > 1.3) {
+    return clamp(Math.round(100 - (ratio - 1.3) * 80), 50, 100);
+  }
+  return clamp(Math.round(ratio * 100), 0, 100);
+}
+
+// ── 4. Volume Trend (15%) ────────────────────────────────────────────
+
 export function calcVolumeTrendScore(weeklyVolumes: WeeklyVolume[]): number {
   if (weeklyVolumes.length < 2) return 50;
 
   const n = weeklyVolumes.length;
   const xs = weeklyVolumes.map((_, i) => i);
   const ys = weeklyVolumes.map((w) => w.volume);
-
   const meanX = xs.reduce((a, b) => a + b, 0) / n;
   const meanY = ys.reduce((a, b) => a + b, 0) / n;
 
-  let numerator = 0;
-  let denominator = 0;
+  let num = 0, den = 0;
   for (let i = 0; i < n; i++) {
-    numerator += (xs[i] - meanX) * (ys[i] - meanY);
-    denominator += (xs[i] - meanX) ** 2;
+    num += (xs[i] - meanX) * (ys[i] - meanY);
+    den += (xs[i] - meanX) ** 2;
   }
+  if (den === 0 || meanY === 0) return 50;
 
-  if (denominator === 0 || meanY === 0) return 50;
-
-  const slope = numerator / denominator;
-  const weeklyChangeRate = slope / meanY; // as fraction of mean
+  const slope = num / den;
+  const weeklyChangeRate = slope / meanY;
   const targetRate = 0.025; // 2.5% weekly increase
 
-  return clamp(50 + (weeklyChangeRate / targetRate) * 50, 0, 100);
+  return clamp(Math.round(50 + (weeklyChangeRate / targetRate) * 50), 0, 100);
 }
 
-// Sub-score 2: Strength Level relative to standards (35%)
-export function calcStrengthLevelScore(
-  e1rm: number,
-  standards: { beginner: number; novice: number; intermediate: number; advanced: number; elite: number } | null
-): number {
-  if (!standards || e1rm <= 0) return 0;
-  const { beginner, novice, intermediate, advanced, elite } = standards;
+// ── 5. Recency (10%) ─────────────────────────────────────────────────
 
-  if (e1rm < beginner) return clamp((e1rm / beginner) * 20, 0, 20);
-  if (e1rm < novice) return 20 + ((e1rm - beginner) / (novice - beginner)) * 15;
-  if (e1rm < intermediate) return 35 + ((e1rm - novice) / (intermediate - novice)) * 15;
-  if (e1rm < advanced) return 50 + ((e1rm - intermediate) / (advanced - intermediate)) * 20;
-  if (e1rm < elite) return 70 + ((e1rm - advanced) / (elite - advanced)) * 15;
-  return clamp(85 + ((e1rm - elite) / elite) * 100, 85, 100);
-}
-
-// Sub-score 3: Training Frequency (15%)
-export function calcFrequencyScore(avgWeeklyFrequency: number, optimalFrequency: number): number {
-  if (optimalFrequency <= 0) return 0;
-  return clamp((avgWeeklyFrequency / optimalFrequency) * 100, 0, 100);
-}
-
-// Sub-score 4: Recency (15%)
 export function calcRecencyScore(daysSinceLastTrained: number): number {
   const decayDays = 14;
-  return Math.max(0, 100 - (daysSinceLastTrained * 100) / decayDays);
+  return Math.max(0, Math.round(100 - (daysSinceLastTrained * 100) / decayDays));
 }
 
-// Composite development score
+// ── Composite Score ──────────────────────────────────────────────────
+
 export function calculateDevelopmentScore(params: {
   weeklyVolumes: WeeklyVolume[];
   bestE1RM: number;
+  recentE1RMs?: { date: Date; e1rm: number }[];
   standards: { beginner: number; novice: number; intermediate: number; advanced: number; elite: number } | null;
   avgWeeklyFrequency: number;
-  optimalFrequency: number;
   daysSinceLastTrained: number;
+  profile?: UserProfile;
 }): DevelopmentScore {
+  const { profile } = params;
+
+  const strengthLevel = calcStrengthLevelScore(params.bestE1RM, params.standards, profile);
+  const progressiveOverload = calcProgressiveOverloadScore(params.recentE1RMs ?? [], profile);
+  const consistency = calcConsistencyScore(params.avgWeeklyFrequency, profile);
   const volumeTrend = calcVolumeTrendScore(params.weeklyVolumes);
-  const strengthLevel = calcStrengthLevelScore(params.bestE1RM, params.standards);
-  const frequency = calcFrequencyScore(params.avgWeeklyFrequency, params.optimalFrequency);
   const recency = calcRecencyScore(params.daysSinceLastTrained);
 
   const overall = Math.round(
-    volumeTrend * 0.35 + strengthLevel * 0.35 + frequency * 0.15 + recency * 0.15
+    strengthLevel * 0.30 +
+    progressiveOverload * 0.25 +
+    consistency * 0.20 +
+    volumeTrend * 0.15 +
+    recency * 0.10
   );
 
-  return { overall, volumeTrend, strengthLevel, frequency, recency };
+  // Generate personalized next milestone
+  const nextMilestone = generateMilestone(strengthLevel, progressiveOverload, consistency, params);
+
+  return { overall, strengthLevel, progressiveOverload, consistency, volumeTrend, recency, nextMilestone };
 }
+
+// ── Personalized Milestones ──────────────────────────────────────────
+
+function generateMilestone(
+  strengthLevel: number,
+  overload: number,
+  consistency: number,
+  params: {
+    bestE1RM: number;
+    standards: { beginner: number; novice: number; intermediate: number; advanced: number; elite: number } | null;
+    avgWeeklyFrequency: number;
+    profile?: UserProfile;
+  }
+): string {
+  // Find weakest area and challenge the user
+  const weakest = Math.min(strengthLevel, overload, consistency);
+
+  if (weakest === consistency && params.avgWeeklyFrequency < 3) {
+    const target = Math.ceil(params.avgWeeklyFrequency) + 1;
+    return `Train ${target}x this week to build consistency`;
+  }
+
+  if (weakest === overload) {
+    const targetE1RM = Math.round(params.bestE1RM * 1.025);
+    return `Push for a ${targetE1RM}kg e1RM (+2.5%)`;
+  }
+
+  if (params.standards) {
+    const s = params.standards;
+    const ageFactor = params.profile ? ageAdjustment(params.profile.ageYears) : 1.0;
+    const e1rm = params.bestE1RM;
+
+    if (e1rm < s.novice * ageFactor) {
+      return `Next target: ${Math.round(s.novice * ageFactor)}kg (Novice)`;
+    }
+    if (e1rm < s.intermediate * ageFactor) {
+      return `Next target: ${Math.round(s.intermediate * ageFactor)}kg (Intermediate)`;
+    }
+    if (e1rm < s.advanced * ageFactor) {
+      return `Next target: ${Math.round(s.advanced * ageFactor)}kg (Advanced)`;
+    }
+    if (e1rm < s.elite * ageFactor) {
+      return `Next target: ${Math.round(s.elite * ageFactor)}kg (Elite)`;
+    }
+    return "Maintain elite-level performance";
+  }
+
+  return "Keep pushing — log more workouts to track progress";
+}
+
+// ── Rank Evaluation (Bi-Monthly) ─────────────────────────────────────
+/**
+ * Wilks-2 coefficient for bodyweight-normalized strength comparison.
+ * Based on the IPF GL coefficient formula (2020 revision).
+ *
+ * Rank tiers based on Wilks score (combined SBD total):
+ *   Iron:     < 150   (beginner, just starting)
+ *   Bronze:   150-225 (consistent training, basic technique)
+ *   Silver:   225-300 (solid foundation, 6-12 months)
+ *   Gold:     300-375 (strong, 1-3 years dedicated training)
+ *   Platinum: 375-425 (very strong, competitive amateur)
+ *   Diamond:  425-475 (exceptional, regional-level competitor)
+ *   Champion: 475+    (elite, national-level strength)
+ */
+
+const WILKS_COEFFICIENTS_MALE = [-216.0475144, 16.2606339, -0.002388645, -0.00113732, 0.00000701863, -0.00000001291];
+const WILKS_COEFFICIENTS_FEMALE = [594.31747775582, -27.23842536447, 0.82112226871, -0.00930733913, 0.00004731582, -0.00000009054];
+
+export function calculateWilks(totalKg: number, bodyWeightKg: number, sex: "male" | "female"): number {
+  if (totalKg <= 0 || bodyWeightKg <= 0) return 0;
+
+  const coeffs = sex === "male" ? WILKS_COEFFICIENTS_MALE : WILKS_COEFFICIENTS_FEMALE;
+  let denominator = coeffs[0];
+  for (let i = 1; i < coeffs.length; i++) {
+    denominator += coeffs[i] * Math.pow(bodyWeightKg, i);
+  }
+
+  if (denominator <= 0) return 0;
+  return Math.round((totalKg * 500 / denominator) * 100) / 100;
+}
+
+export interface RankResult {
+  rank: string;
+  rankScore: number;    // 0-100
+  wilksScore: number;
+  totalKg: number;
+  nextRank: string | null;
+  pointsToNext: number; // wilks points needed
+  benchPercentile: number;
+  squatPercentile: number;
+  deadliftPercentile: number;
+}
+
+const RANK_TIERS = [
+  { name: "Iron", minWilks: 0, color: "#78716C" },
+  { name: "Bronze", minWilks: 150, color: "#CD7F32" },
+  { name: "Silver", minWilks: 225, color: "#C0C0C0" },
+  { name: "Gold", minWilks: 300, color: "#FFD700" },
+  { name: "Platinum", minWilks: 375, color: "#E5E4E2" },
+  { name: "Diamond", minWilks: 425, color: "#B9F2FF" },
+  { name: "Champion", minWilks: 475, color: "#FF4500" },
+];
+
+export function getRankTiers() {
+  return RANK_TIERS;
+}
+
+export function calculateRank(
+  benchKg: number,
+  squatKg: number,
+  deadliftKg: number,
+  bodyWeightKg: number,
+  sex: "male" | "female",
+  ageYears?: number
+): RankResult {
+  const totalKg = benchKg + squatKg + deadliftKg;
+  let wilksScore = calculateWilks(totalKg, bodyWeightKg, sex);
+
+  // Age bonus: masters lifters get a coefficient boost (McCulloch age coefficients)
+  if (ageYears && ageYears >= 40) {
+    const ageCoeff = 1 + (ageYears - 39) * 0.005; // ~0.5% per year over 39
+    wilksScore = Math.round(wilksScore * Math.min(ageCoeff, 1.35) * 100) / 100;
+  }
+
+  // Determine rank
+  let rank = RANK_TIERS[0];
+  for (const tier of RANK_TIERS) {
+    if (wilksScore >= tier.minWilks) rank = tier;
+  }
+
+  // Next rank
+  const currentIdx = RANK_TIERS.indexOf(rank);
+  const nextTier = currentIdx < RANK_TIERS.length - 1 ? RANK_TIERS[currentIdx + 1] : null;
+  const pointsToNext = nextTier ? Math.max(0, nextTier.minWilks - wilksScore) : 0;
+
+  // Rank score (0-100 within the tier system)
+  const rankScore = Math.min(100, Math.round((wilksScore / 500) * 100));
+
+  return {
+    rank: rank.name,
+    rankScore,
+    wilksScore,
+    totalKg,
+    nextRank: nextTier?.name ?? null,
+    pointsToNext: Math.round(pointsToNext * 10) / 10,
+    benchPercentile: 0, // filled by caller
+    squatPercentile: 0,
+    deadliftPercentile: 0,
+  };
+}
+
+// ── UI Helpers ───────────────────────────────────────────────────────
 
 export function getScoreColor(score: number): string {
   if (score >= 61) return "text-accent";
@@ -131,4 +408,9 @@ export function getScoreLabel(score: number): string {
   if (score >= 35) return "Novice";
   if (score >= 20) return "Beginner";
   return "Untrained";
+}
+
+export function getRankColor(rank: string): string {
+  const tier = RANK_TIERS.find((t) => t.name === rank);
+  return tier?.color ?? "#78716C";
 }
