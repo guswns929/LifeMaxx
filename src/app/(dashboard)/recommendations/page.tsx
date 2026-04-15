@@ -29,16 +29,30 @@ interface MuscleScore {
   suggestedExercises: string[];
 }
 
+interface NutritionRec {
+  recommendations: string[];
+}
+
 export default function RecommendationsPage() {
   const [workouts, setWorkouts] = useState<WorkoutData[]>([]);
+  const [nutritionRecs, setNutritionRecs] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch("/api/workouts?limit=200");
-      if (res.ok) {
-        const data = await res.json();
+      const [workoutsRes, journalRes] = await Promise.all([
+        fetch("/api/workouts?limit=200"),
+        fetch("/api/daily-log"),
+      ]);
+      if (workoutsRes.ok) {
+        const data = await workoutsRes.json();
         setWorkouts(data);
+      }
+      if (journalRes.ok) {
+        const journal = await journalRes.json();
+        if (journal.analysis?.recommendations) {
+          setNutritionRecs(journal.analysis.recommendations);
+        }
       }
     } finally {
       setLoading(false);
@@ -244,6 +258,35 @@ export default function RecommendationsPage() {
         ) : (
           <p className="text-text-muted text-sm text-center py-6">
             No neglected muscles -- you are training everything consistently!
+          </p>
+        )}
+      </div>
+
+      {/* Nutrition & Daily Recommendations */}
+      <div className="bg-surface rounded-xl border border-border p-6 shadow-sm">
+        <h2 className="text-sm font-semibold text-text-primary mb-1">
+          Nutrition & Recovery Recommendations
+        </h2>
+        <p className="text-xs text-text-muted mb-4">
+          Personalized suggestions based on your recent nutrition, training, and recovery data
+        </p>
+
+        {nutritionRecs.length > 0 ? (
+          <div className="space-y-2.5">
+            {nutritionRecs.map((rec, i) => (
+              <div key={i} className="flex items-start gap-3 py-2">
+                <div className="w-6 h-6 rounded-full bg-green-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 18l6-6-6-6" />
+                  </svg>
+                </div>
+                <p className="text-sm text-text-secondary">{rec}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-text-muted text-sm text-center py-6">
+            Log nutrition data and workouts to get personalized recommendations.
           </p>
         )}
       </div>

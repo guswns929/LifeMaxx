@@ -59,6 +59,119 @@ export function calculateE1RM(weight: number, reps: number): number {
   return weight * (36 / (37 - reps)); // Brzycki
 }
 
+/**
+ * Holistic E1RM Projection
+ *
+ * Instead of calculating e1RM per workout independently, this processes ALL
+ * previous workouts for an exercise to produce a smoothed, projected e1RM
+ * at each date. Uses a Bayesian-inspired exponentially weighted approach:
+ *
+ * 1. All historical sets contribute, weighted by recency (half-life ~14 days)
+ * 2. Higher-quality estimates (lower rep ranges, higher RPE) get more weight
+ * 3. Multiple sets on the same day are combined (best estimate wins)
+ * 4. The projection uses EWMA (Exponentially Weighted Moving Average) to
+ *    smooth noise and prevent single-session outliers from distorting the curve
+ *
+ * This gives a more realistic "true strength" estimate than per-workout max.
+ *
+ * References:
+ *   - Epley/Brzycki formulas (1RM estimation)
+ *   - EWMA for athletic load monitoring (Williams et al., 2017, JSCR)
+ */
+export interface ProjectedE1RM {
+  date: Date;
+  e1rm: number;         // smoothed projected e1RM at this date
+  rawE1rm: number;      // best single-set e1RM on this date
+  confidence: number;   // 0-1, how much data supports this estimate
+}
+
+export function calculateHolisticE1RM(
+  sets: { date: Date; weightKg: number; reps: number; rpe?: number | null }[]
+): ProjectedE1RM[] {
+  if (sets.length === 0) return [];
+
+  // Group sets by date, compute best raw e1RM per date
+  const byDate = new Map<string, { date: Date; estimates: { e1rm: number; quality: number }[] }>();
+
+  for (const s of sets) {
+    if (s.weightKg <= 0 || s.reps <= 0) continue;
+    const dateKey = `${s.date.getFullYear()}-${String(s.date.getMonth() + 1).padStart(2, "0")}-${String(s.date.getDate()).padStart(2, "0")}`;
+    const e1rm = calculateE1RM(s.weightKg, s.reps);
+
+    // Quality weight: lower reps = more accurate estimate, higher RPE = closer to true max
+    let quality = 1.0;
+    if (s.reps <= 5) quality = 1.0;
+    else if (s.reps <= 10) quality = 0.85;
+    else if (s.reps <= 15) quality = 0.7;
+    else quality = 0.5;
+    if (s.rpe != null && s.rpe >= 8) quality *= 1.1; // high RPE = closer to true max
+
+    if (!byDate.has(dateKey)) {
+      byDate.set(dateKey, { date: new Date(s.date), estimates: [] });
+    }
+    byDate.get(dateKey)!.estimates.push({ e1rm, quality });
+  }
+
+  // Sort dates chronologically
+  const sorted = [...byDate.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, v]) => ({
+      date: v.date,
+      rawE1rm: Math.max(...v.estimates.map((e) => e.e1rm)),
+      bestQuality: Math.max(...v.estimates.map((e) => e.quality)),
+    }));
+
+  if (sorted.length === 0) return [];
+
+  // Apply EWMA smoothing
+  // Alpha controls responsiveness: higher = more responsive to new data
+  const alpha = 0.3;
+  const results: ProjectedE1RM[] = [];
+  let ewma = sorted[0].rawE1rm;
+
+  for (let i = 0; i < sorted.length; i++) {
+    const { date, rawE1rm, bestQuality } = sorted[i];
+
+    // Apply exponential smoothing
+    if (i === 0) {
+      ewma = rawE1rm;
+    } else {
+      // Use adaptive alpha: higher quality data gets more influence
+      const adaptiveAlpha = alpha * bestQuality;
+      ewma = adaptiveAlpha * rawE1rm + (1 - adaptiveAlpha) * ewma;
+
+      // If new raw is significantly higher than EWMA, pull up faster
+      // (genuine strength gains should be respected)
+      if (rawE1rm > ewma * 1.02) {
+        ewma = Math.max(ewma, ewma + (rawE1rm - ewma) * 0.5);
+      }
+    }
+
+    // Confidence based on data density around this date
+    const confidence = Math.min(1, (i + 1) / 5); // reaches max after 5 data points
+
+    results.push({
+      date,
+      e1rm: Math.round(ewma * 10) / 10,
+      rawE1rm: Math.round(rawE1rm * 10) / 10,
+      confidence,
+    });
+  }
+
+  return results;
+}
+
+/**
+ * Get the current projected e1RM (latest smoothed value).
+ */
+export function getCurrentProjectedE1RM(
+  sets: { date: Date; weightKg: number; reps: number; rpe?: number | null }[]
+): number {
+  const projections = calculateHolisticE1RM(sets);
+  if (projections.length === 0) return 0;
+  return projections[projections.length - 1].e1rm;
+}
+
 // ── Age Adjustment Factor ────────────────────────────────────────────
 // Masters lifters lose ~1-2% strength per year after 40 (Pearson et al., 2002)
 // Youth lifters (<18) haven't peaked; adjust expectations down

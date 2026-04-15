@@ -44,14 +44,19 @@ export async function POST(request: NextRequest) {
     const userId = session.user.id;
 
     const body = await request.json();
-    const { date, notes, durationMin, exercises } = body;
+    const { date, notes, durationMin, exercises, workoutType } = body;
 
     const workout = await prisma.workout.create({
       data: {
         userId,
-        date: date ? new Date(date) : new Date(),
+        date: (() => {
+          const d = date ? new Date(date) : new Date();
+          d.setHours(0, 0, 0, 0);
+          return d;
+        })(),
         notes,
         durationMin,
+        workoutType: workoutType || "strength",
         isDetailed: Array.isArray(exercises) && exercises.length > 0,
         exercises: {
           create: (exercises || []).map(

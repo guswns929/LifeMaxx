@@ -25,10 +25,12 @@ export async function POST(_request: NextRequest) {
 
     const results = { recovery: 0, strain: 0, sleep: 0, workouts: 0, errors: [] as string[] };
 
-    // Normalize a date to midnight UTC for consistent daily deduplication
+    // Normalize a date to local midnight for consistent daily deduplication
+    // Using local time prevents off-by-one errors when WHOOP returns UTC
+    // timestamps that fall on a different calendar day in the user's timezone
     function toMidnight(d: Date): Date {
       const m = new Date(d);
-      m.setUTCHours(0, 0, 0, 0);
+      m.setHours(0, 0, 0, 0);
       return m;
     }
 
@@ -132,7 +134,9 @@ export async function POST(_request: NextRequest) {
       if (Array.isArray(workoutRecords)) {
         for (const w of workoutRecords) {
           const activityId = String(w.id);
-          const date = new Date(w.start || w.created_at);
+          // Use local midnight so the workout appears on the correct calendar day
+          const rawDate = new Date(w.start || w.created_at);
+          const date = toMidnight(rawDate);
 
           // Per-workout strain is stored on the Workout record, not WhoopDatum
           // Daily strain comes from the cycle sync above
@@ -146,7 +150,7 @@ export async function POST(_request: NextRequest) {
               maxHeartRate: w.score?.max_heart_rate ?? null,
               calories: w.score?.kilojoule ? w.score.kilojoule / 4.184 : null,
               activityType: w.sport_id?.toString() ?? null,
-              durationMin: w.end ? Math.round((new Date(w.end).getTime() - date.getTime()) / 60000) : null,
+              durationMin: w.end ? Math.round((new Date(w.end).getTime() - rawDate.getTime()) / 60000) : null,
             },
             update: {
               strainScore: w.score?.strain ?? null,

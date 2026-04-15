@@ -58,7 +58,7 @@ export async function PUT(
       return NextResponse.json({ error: "Workout not found" }, { status: 404 });
 
     const body = await request.json();
-    const { date, name, notes, durationMin, exercises } = body;
+    const { date, name, notes, durationMin, exercises, workoutType } = body;
 
     if (Array.isArray(exercises)) {
       await prisma.workoutExercise.deleteMany({ where: { workoutId: id } });
@@ -67,10 +67,13 @@ export async function PUT(
     const workout = await prisma.workout.update({
       where: { id },
       data: {
-        ...(date !== undefined && { date: new Date(date) }),
+        ...(date !== undefined && {
+          date: (() => { const d = new Date(date); d.setHours(0, 0, 0, 0); return d; })(),
+        }),
         ...(name !== undefined && { name }),
         ...(notes !== undefined && { notes }),
         ...(durationMin !== undefined && { durationMin }),
+        ...(workoutType !== undefined && { workoutType }),
         ...(Array.isArray(exercises) && {
           isDetailed: exercises.length > 0,
           exercises: {

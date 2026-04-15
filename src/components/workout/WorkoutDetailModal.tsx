@@ -89,6 +89,9 @@ export default function WorkoutDetailModal({
     sourceWorkout?.date ? sourceWorkout.date.split("T")[0] : todayISO()
   );
   const [notes, setNotes] = useState(sourceWorkout?.notes ?? "");
+  const [workoutType, setWorkoutType] = useState<"strength" | "cardio" | "misc">(
+    (sourceWorkout as Record<string, unknown>)?.workoutType as "strength" | "cardio" | "misc" || "strength"
+  );
   const [exercises, setExercises] = useState<WorkoutExerciseData[]>(initExercises);
   const [showExerciseSelect, setShowExerciseSelect] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -163,6 +166,7 @@ export default function WorkoutDetailModal({
       const body = {
         date,
         notes: notes || null,
+        workoutType,
         exercises: exercises.map((ex) => ({
           exerciseId: ex.exerciseId,
           sets: ex.sets,
@@ -253,6 +257,33 @@ export default function WorkoutDetailModal({
               onChange={(e) => setDate(e.target.value)}
               className="block w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 transition-colors"
             />
+          </div>
+
+          {/* Workout Type */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-stone-900">
+              Type
+            </label>
+            <div className="flex gap-2">
+              {(["strength", "cardio", "misc"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setWorkoutType(t)}
+                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium border transition-colors ${
+                    workoutType === t
+                      ? t === "strength"
+                        ? "bg-green-50 border-green-400 text-green-700"
+                        : t === "cardio"
+                        ? "bg-blue-50 border-blue-400 text-blue-700"
+                        : "bg-purple-50 border-purple-400 text-purple-700"
+                      : "border-stone-200 text-stone-500 hover:border-stone-300"
+                  }`}
+                >
+                  {t === "strength" ? "Strength" : t === "cardio" ? "Cardio" : "Misc"}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Notes */}
@@ -446,7 +477,7 @@ export default function WorkoutDetailModal({
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving || exercises.length === 0}
+            disabled={saving || (workoutType === "strength" && exercises.length === 0)}
             className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white bg-green-500 hover:bg-green-600 active:bg-green-700 transition-colors disabled:opacity-50 disabled:pointer-events-none"
           >
             {saving && (

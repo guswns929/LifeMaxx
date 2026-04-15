@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import StatsCards from "@/components/dashboard/StatsCards";
-import BodyDiagram, { type MuscleActivity } from "@/components/body/BodyDiagram";
+import BodyDiagram, { type MuscleActivity, type MapMode, type OverallMuscleData } from "@/components/body/BodyDiagram";
 import MuscleDetailPanel, { type MuscleStats } from "@/components/body/MuscleDetailPanel";
 import WorkoutDetailModal from "@/components/workout/WorkoutDetailModal";
 import { MUSCLE_GROUPS } from "@/lib/muscle-groups";
@@ -37,6 +37,7 @@ interface WorkoutData {
   name: string | null;
   notes: string | null;
   isDetailed: boolean;
+  workoutType?: string;
   strainScore?: number | null;
   activityType?: string | null;
   durationMin?: number | null;
@@ -60,12 +61,16 @@ export default function DashboardPage() {
   const [units, setUnits] = useState<"metric" | "imperial">("imperial");
   const [userSex, setUserSex] = useState<"male" | "female">("male");
   const [userWeightKg, setUserWeightKg] = useState<number>(80);
+  const [mapMode, setMapMode] = useState<MapMode>("weekly");
+  const [overallMuscleData, setOverallMuscleData] = useState<OverallMuscleData[]>([]);
+  const [muscleDevScores, setMuscleDevScores] = useState<Record<string, number>>({});
 
   const fetchData = useCallback(async () => {
     try {
-      const [workoutsRes, settingsRes] = await Promise.all([
+      const [workoutsRes, settingsRes, muscleScoresRes] = await Promise.all([
         fetch("/api/workouts?limit=100"),
         fetch("/api/settings"),
+        fetch("/api/muscle-scores"),
       ]);
       if (workoutsRes.ok) {
         const data = await workoutsRes.json();
@@ -76,6 +81,22 @@ export default function DashboardPage() {
         setUnits(settings.preferredUnits || "imperial");
         if (settings.sex) setUserSex(settings.sex);
         if (settings.bodyWeightKg) setUserWeightKg(settings.bodyWeightKg);
+      }
+      if (muscleScoresRes.ok) {
+        const scoreData = await muscleScoresRes.json();
+        const overall: OverallMuscleData[] = (scoreData.muscleScores || []).map(
+          (m: { slug: string; development: { overall: number }; strengthLevel: number | null }) => ({
+            slug: m.slug,
+            developmentScore: m.development.overall,
+            percentile: m.strengthLevel,
+          })
+        );
+        setOverallMuscleData(overall);
+        const devMap: Record<string, number> = {};
+        for (const m of scoreData.muscleScores || []) {
+          devMap[m.slug] = m.development.overall;
+        }
+        setMuscleDevScores(devMap);
       }
     } finally {
       setLoading(false);
@@ -126,18 +147,31 @@ export default function DashboardPage() {
     }
   }
 
-  // Build muscle activity data for body diagram
+  // Build muscle activity data for body diagram (weekly mode: this week only)
   const muscleActivityMap = new Map<string, number>();
   const now = new Date();
-  workouts.forEach((w) => {
-    w.exercises.forEach((we) => {
-      const muscles = parseMuscles(we.exercise.primaryMuscles);
-      const secondary = parseMuscles(we.exercise.secondaryMuscles);
-      [...muscles, ...secondary].forEach((m) => {
-        muscleActivityMap.set(m, (muscleActivityMap.get(m) || 0) + 1);
+  const oneWeekAgoForMap = new Date(now);
+  oneWeekAgoForMap.setDate(oneWeekAgoForMap.getDate() - 7);
+  workouts
+    .filter((w) => new Date(w.date) >= oneWeekAgoForMap)
+    .forEach((w) => {
+      // Count strain from WHOOP workouts (cardio/misc contribute to weekly load)
+      const strainBonus = w.strainScore ? Math.ceil(w.strainScore / 7) : 0;
+      w.exercises.forEach((we) => {
+        const muscles = parseMuscles(we.exercise.primaryMuscles);
+        const secondary = parseMuscles(we.exercise.secondaryMuscles);
+        [...muscles, ...secondary].forEach((m) => {
+          muscleActivityMap.set(m, (muscleActivityMap.get(m) || 0) + 1);
+        });
       });
+      // For cardio/misc workouts without exercises, add general strain indicators
+      if (w.exercises.length === 0 && strainBonus > 0) {
+        // General cardiovascular muscles
+        ["quadriceps", "hamstring", "gluteal", "calves"].forEach((m) => {
+          muscleActivityMap.set(m, (muscleActivityMap.get(m) || 0) + strainBonus);
+        });
+      }
     });
-  });
 
   const bodyData: MuscleActivity[] = MUSCLE_GROUPS.map((mg) => ({
     name: mg.slug,
@@ -158,15 +192,19 @@ export default function DashboardPage() {
       )
     );
 
-  // Streak calculation
+  // Streak calculation using YYYY-MM-DD for locale-independent comparison
   let streak = 0;
-  const sortedDates = [...new Set(workouts.map((w) => new Date(w.date).toDateString()))].sort(
-    (a, b) => new Date(b).getTime() - new Date(a).getTime()
-  );
+  function toLocalDate(d: Date): string {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  const sortedDates = [...new Set(workouts.map((w) => {
+    const d = new Date(w.date);
+    return toLocalDate(d);
+  }))].sort((a, b) => b.localeCompare(a));
   for (let i = 0; i < sortedDates.length; i++) {
     const expected = new Date(now);
     expected.setDate(expected.getDate() - i);
-    if (new Date(sortedDates[i]).toDateString() === expected.toDateString()) {
+    if (sortedDates[i] === toLocalDate(expected)) {
       streak++;
     } else break;
   }
@@ -228,7 +266,7 @@ export default function DashboardPage() {
       slug: muscleSlug,
       workoutCount: allMuscleWorkouts.length,
       daysSinceLastTrained: daysSince,
-      developmentScore: Math.min(100, Math.round(effectiveCount * 8) + (daysSince !== null ? Math.max(0, 50 - daysSince * 3) : 0)),
+      developmentScore: muscleDevScores[muscleSlug] ?? Math.min(100, Math.round(effectiveCount * 8) + (daysSince !== null ? Math.max(0, 50 - daysSince * 3) : 0)),
       populationPercentile: percentile,
       recentExercises,
     });
@@ -274,7 +312,13 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-surface rounded-xl border border-border p-6 shadow-sm">
           <h2 className="text-sm font-semibold text-text-primary mb-4">Muscle Map</h2>
-          <BodyDiagram data={bodyData} onMuscleClick={handleMuscleClick} />
+          <BodyDiagram
+            data={bodyData}
+            overallData={overallMuscleData}
+            mode={mapMode}
+            onModeChange={setMapMode}
+            onMuscleClick={handleMuscleClick}
+          />
         </div>
 
         <div className="bg-surface rounded-xl border border-border p-6 shadow-sm">
@@ -311,6 +355,13 @@ export default function DashboardPage() {
                           weekday: "short", month: "short", day: "numeric",
                         })}
                       </span>
+                      {w.workoutType && w.workoutType !== "strength" && (
+                        <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                          w.workoutType === "cardio" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"
+                        }`}>
+                          {w.workoutType === "cardio" ? "Cardio" : "Misc"}
+                        </span>
+                      )}
                       {w.exercises.length > 0 && (
                         <span>&middot; {w.exercises.reduce((sum, e) => sum + e.sets.length, 0)} sets</span>
                       )}

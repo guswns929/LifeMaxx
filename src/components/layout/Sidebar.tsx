@@ -30,6 +30,16 @@ const navItems = [
     ),
   },
   {
+    label: "Journal",
+    href: "/journal",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14 2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z" />
+        <path d="M6 6h6M6 9h6M6 12h4" />
+      </svg>
+    ),
+  },
+  {
     label: "Body Composition",
     href: "/body-comp",
     icon: (

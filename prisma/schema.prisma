@@ -26,6 +26,7 @@ model User {
   whoopData        WhoopDatum[]
   customExercises  Exercise[]       @relation("CustomExercises")
   rankEvaluations  RankEvaluation[]
+  journalEntries   JournalEntry[]
 }
 
 model Workout {
@@ -35,6 +36,7 @@ model Workout {
   name            String?
   notes           String?
   durationMin     Int?
+  workoutType     String    @default("strength") // "strength" | "cardio" | "misc"
   // WHOOP fields
   whoopActivityId String?   @unique
   strainScore     Float?
@@ -177,4 +179,23 @@ model WhoopDatum {
   user User @relation(fields: [userId], references: [id])
 
   @@unique([userId, date, dataType])
+}
+
+model JournalEntry {
+  id               String   @id @default(cuid())
+  userId           String
+  date             DateTime
+  overallScore     Int      // 0-100
+  nutritionScore   Int?
+  trainingScore    Int?
+  recoveryScore    Int?
+  trendScore       Int?
+  analysisJson     String   // full DailyAnalysis JSON for score explanations
+  recommendations  String?  // JSON array of daily recommendations
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, date])
 }
