@@ -39,7 +39,9 @@ export const ACTIVITY_LABELS: Record<ActivityLevel, string> = {
 
 export interface NutritionTargets {
   bmr: number;
-  tdee: number;            // maintenance calories
+  tdee: number;            // maintenance calories (strain-adjusted if available)
+  baseTdee: number;        // TDEE before strain adjustment
+  strainAdjustment: number; // calories added/removed due to strain
   targetCalories: number;  // after deficit/surplus
   deficit: number;         // negative = deficit, positive = surplus
   proteinG: number;
@@ -68,6 +70,47 @@ export function calculateBMR(
 /**
  * Calculate full nutrition targets.
  */
+/**
+ * Estimate exercise calories from WHOOP strain score.
+ *
+ * WHOOP strain is 0-21 on a logarithmic scale based on cardiovascular load.
+ * We convert it to an estimated calorie burn using a body-weight-scaled
+ * model derived from WHOOP's own published strain-to-calorie relationships
+ * (Capodilupo & Amin, 2020, WHOOP white paper).
+ *
+ * Low strain (0-8):   ~50-200 kcal (light activity / daily living)
+ * Moderate (8-14):    ~200-500 kcal (standard workout)
+ * High (14-18):       ~500-900 kcal (intense training)
+ * Very high (18-21):  ~900-1200+ kcal (extreme / competition day)
+ *
+ * The baseline activity multiplier already accounts for general activity,
+ * so we subtract an expected baseline and only add the delta.
+ */
+function strainToCalorieAdjustment(
+  strainScore: number,
+  weightKg: number,
+  activityLevel: ActivityLevel
+): number {
+  // Estimate total exercise kcal from strain (weight-scaled)
+  // Quadratic model: higher strain = disproportionately more calories
+  const basePerKg = 0.15; // kcal per kg per strain-unit squared factor
+  const exerciseCals = basePerKg * weightKg * Math.pow(strainScore, 1.4) / 10;
+
+  // Expected exercise kcal already baked into the activity multiplier
+  // sedentary=0, light≈150, moderate≈300, active≈500, very_active≈700
+  const expectedExerciseCals: Record<ActivityLevel, number> = {
+    sedentary: 0,
+    light: 150,
+    moderate: 300,
+    active: 500,
+    very_active: 700,
+  };
+
+  const delta = Math.round(exerciseCals - expectedExerciseCals[activityLevel]);
+  // Clamp to ±600 kcal to avoid extreme swings
+  return Math.max(-300, Math.min(600, delta));
+}
+
 export function calculateNutritionTargets(params: {
   weightKg: number;
   heightCm: number;
@@ -75,11 +118,19 @@ export function calculateNutritionTargets(params: {
   sex: "male" | "female";
   activityLevel: ActivityLevel;
   phase: "cut" | "maintain" | "bulk";
+  whoopStrain?: number | null; // 0-21 scale, today's strain from WHOOP
 }): NutritionTargets {
-  const { weightKg, heightCm, ageYears, sex, activityLevel, phase } = params;
+  const { weightKg, heightCm, ageYears, sex, activityLevel, phase, whoopStrain } = params;
 
   const bmr = calculateBMR(weightKg, heightCm, ageYears, sex);
-  const tdee = Math.round(bmr * ACTIVITY_MULTIPLIERS[activityLevel]);
+  const baseTdee = Math.round(bmr * ACTIVITY_MULTIPLIERS[activityLevel]);
+
+  // Adjust TDEE with WHOOP strain data when available
+  let strainAdjustment = 0;
+  if (whoopStrain != null && whoopStrain > 0) {
+    strainAdjustment = strainToCalorieAdjustment(whoopStrain, weightKg, activityLevel);
+  }
+  const tdee = baseTdee + strainAdjustment;
 
   // Calorie target based on phase
   let deficit = 0;
@@ -114,7 +165,9 @@ export function calculateNutritionTargets(params: {
 
   return {
     bmr: Math.round(bmr),
-    tdee,
+    tdee: Math.round(tdee),
+    baseTdee,
+    strainAdjustment,
     targetCalories: Math.round(targetCalories),
     deficit,
     proteinG,

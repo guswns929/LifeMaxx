@@ -36,10 +36,12 @@ export default function BodyCompPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activityLevel, setActivityLevel] = useState<ActivityLevel>("moderate");
   const [targets, setTargets] = useState<{
-    bmr: number; tdee: number; targetCalories: number; deficit: number;
+    bmr: number; tdee: number; baseTdee: number; strainAdjustment: number;
+    targetCalories: number; deficit: number;
     proteinG: number; fatG: number; carbsG: number;
     proteinPct: number; fatPct: number; carbsPct: number;
     phase: string; weightKg: number; ageYears: number;
+    whoopStrainUsed: number | null;
   } | null>(null);
   const [targetsError, setTargetsError] = useState<string | null>(null);
 
@@ -297,7 +299,15 @@ export default function BodyCompPage() {
               <div className="p-3 rounded-lg bg-surface-raised">
                 <p className="text-xs text-text-muted">Maintenance</p>
                 <p className="text-lg font-bold text-green-500">{targets.tdee}</p>
-                <p className="text-[10px] text-text-muted">kcal/day</p>
+                {targets.strainAdjustment !== 0 ? (
+                  <p className="text-[10px] text-amber-400">
+                    {targets.strainAdjustment > 0 ? "+" : ""}{targets.strainAdjustment} from WHOOP
+                  </p>
+                ) : targets.whoopStrainUsed != null ? (
+                  <p className="text-[10px] text-text-muted">strain-adjusted</p>
+                ) : (
+                  <p className="text-[10px] text-text-muted">kcal/day</p>
+                )}
               </div>
               <div className="p-3 rounded-lg bg-surface-raised">
                 <p className="text-xs text-text-muted">Target ({targets.phase})</p>

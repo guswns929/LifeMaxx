@@ -38,6 +38,19 @@ export async function GET(request: NextRequest) {
     const activityLevel = (request.nextUrl.searchParams.get("activity") as ActivityLevel) || "moderate";
     const phase = (latestMeasurement?.phase as "cut" | "maintain" | "bulk") || "maintain";
 
+    // Fetch today's WHOOP strain for dynamic TDEE adjustment
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const latestStrain = await prisma.whoopDatum.findFirst({
+      where: {
+        userId: session.user.id,
+        dataType: "strain",
+        date: { gte: todayStart },
+      },
+      orderBy: { date: "desc" },
+      select: { strainScore: true },
+    });
+
     const targets = calculateNutritionTargets({
       weightKg,
       heightCm,
@@ -45,6 +58,7 @@ export async function GET(request: NextRequest) {
       sex,
       activityLevel,
       phase,
+      whoopStrain: latestStrain?.strainScore ?? null,
     });
 
     return NextResponse.json({
@@ -53,6 +67,7 @@ export async function GET(request: NextRequest) {
       activityLevel,
       weightKg: Math.round(weightKg * 10) / 10,
       ageYears,
+      whoopStrainUsed: latestStrain?.strainScore ?? null,
     });
   } catch (error) {
     console.error("GET /api/nutrition/targets error:", error);
