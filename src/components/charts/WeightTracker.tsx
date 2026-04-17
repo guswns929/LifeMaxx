@@ -3,21 +3,18 @@
 import {
   ComposedChart,
   Area,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
   ReferenceArea,
 } from "recharts";
-import { formatWeight, type UnitSystem } from "@/lib/units";
+import { type UnitSystem } from "@/lib/units";
 
 interface WeightDataPoint {
   date: string;
   weightKg: number;
-  weeklyVolume?: number;
   phase?: "cut" | "bulk" | "maintain" | null;
 }
 
@@ -30,7 +27,6 @@ export default function WeightTracker({ data, units }: WeightTrackerProps) {
   const displayData = data.map((d) => ({
     date: new Date(d.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
     weight: units === "imperial" ? Math.round(d.weightKg * 2.20462 * 10) / 10 : d.weightKg,
-    volume: d.weeklyVolume ? Math.round(d.weeklyVolume / 1000) : undefined,
     phase: d.phase,
   }));
 
@@ -58,13 +54,33 @@ export default function WeightTracker({ data, units }: WeightTrackerProps) {
     maintain: "rgba(120, 113, 108, 0.05)",
   };
 
+  // Tight y-axis around the data so small weight swings are visible.
+  const weights = displayData.map((d) => d.weight);
+  const weightUnit = units === "imperial" ? "lb" : "kg";
+  const yDomain: [number | string, number | string] = weights.length > 0
+    ? (() => {
+        const min = Math.min(...weights);
+        const max = Math.max(...weights);
+        const span = Math.max(max - min, units === "imperial" ? 4 : 2);
+        const pad = Math.max(span * 0.25, units === "imperial" ? 2 : 1);
+        return [Math.floor(min - pad), Math.ceil(max + pad)];
+      })()
+    : ["auto", "auto"];
+
   return (
     <div className="bg-surface rounded-xl border border-border p-4 shadow-sm">
-      <h3 className="text-sm font-semibold text-text-primary mb-4">Body Weight & Training Volume</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-semibold text-text-primary">Body Weight</h3>
+        <div className="flex items-center gap-3 text-[10px] text-text-muted">
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500/60" /> Cut</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500/60" /> Bulk</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-stone-500/60" /> Maintain</span>
+        </div>
+      </div>
 
       {displayData.length > 0 ? (
-        <ResponsiveContainer width="100%" height={300} minWidth={0}>
-          <ComposedChart data={displayData}>
+        <ResponsiveContainer width="100%" height={300}>
+          <ComposedChart data={displayData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#44403C" />
             {phaseRegions.map((r, i) => (
               <ReferenceArea
@@ -82,19 +98,13 @@ export default function WeightTracker({ data, units }: WeightTrackerProps) {
               axisLine={{ stroke: "#44403C" }}
             />
             <YAxis
-              yAxisId="weight"
               tick={{ fontSize: 11, fill: "#A8A29E" }}
               tickLine={false}
               axisLine={{ stroke: "#44403C" }}
-              unit={units === "imperial" ? " lb" : " kg"}
-            />
-            <YAxis
-              yAxisId="volume"
-              orientation="right"
-              tick={{ fontSize: 11, fill: "#A8A29E" }}
-              tickLine={false}
-              axisLine={{ stroke: "#44403C" }}
-              unit="k"
+              domain={yDomain}
+              allowDecimals={false}
+              unit={` ${weightUnit}`}
+              width={65}
             />
             <Tooltip
               contentStyle={{
@@ -104,25 +114,19 @@ export default function WeightTracker({ data, units }: WeightTrackerProps) {
                 fontSize: "12px",
                 color: "#FAFAF9",
               }}
+              formatter={(value) => [`${value} ${weightUnit}`, "Weight"]}
             />
-            <Legend />
             <Area
-              yAxisId="weight"
               type="monotone"
               dataKey="weight"
               fill="#86EFAC"
-              fillOpacity={0.3}
+              fillOpacity={0.25}
               stroke="#22C55E"
               strokeWidth={2}
-              name={`Weight (${units === "imperial" ? "lb" : "kg"})`}
-            />
-            <Bar
-              yAxisId="volume"
-              dataKey="volume"
-              fill="#D4D4D8"
-              fillOpacity={0.5}
-              radius={[2, 2, 0, 0]}
-              name="Volume (thousands)"
+              name={`Weight (${weightUnit})`}
+              dot={{ r: 3, fill: "#22C55E", stroke: "#22C55E" }}
+              activeDot={{ r: 5 }}
+              isAnimationActive={false}
             />
           </ComposedChart>
         </ResponsiveContainer>

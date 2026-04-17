@@ -192,13 +192,18 @@ export async function POST(request: NextRequest) {
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const trainingDays14d = new Set(recentWorkouts.map((w) => toLocalDate(new Date(w.date)))).size;
 
-    // Consecutive training days
+    // Consecutive training days — strength-only. Cardio/misc sessions don't
+    // trigger the same systemic-recovery demand as resistance training, so we
+    // exclude them from rest-day recommendations.
     let consecutiveTrainingDays = 0;
-    const trainingDateSet = new Set(recentWorkouts.map((w) => toLocalDate(new Date(w.date))));
+    const strengthWorkouts = recentWorkouts.filter(
+      (w) => w.workoutType !== "cardio" && w.workoutType !== "misc"
+    );
+    const strengthDateSet = new Set(strengthWorkouts.map((w) => toLocalDate(new Date(w.date))));
     for (let i = 0; i <= 14; i++) {
       const d = new Date(targetStart);
       d.setDate(d.getDate() - i);
-      if (trainingDateSet.has(toLocalDate(d))) {
+      if (strengthDateSet.has(toLocalDate(d))) {
         consecutiveTrainingDays++;
       } else break;
     }

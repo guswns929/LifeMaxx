@@ -360,18 +360,45 @@ export default function RankedPage() {
       )}
 
       {/* Scoring Methodology */}
-      <div className="bg-surface rounded-xl border border-border p-4 shadow-sm">
-        <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Scoring Methodology</h4>
-        <div className="text-[11px] text-text-muted leading-relaxed space-y-1">
-          <p>
-            <span className="text-text-secondary font-medium">Wilks Coefficient</span>: Normalizes your SBD total relative to body weight using the IPF-approved Wilks formula, enabling fair comparison across weight classes.
-          </p>
-          <p>
-            <span className="text-text-secondary font-medium">Age Adjustment</span>: Masters lifters (40+) receive a McCulloch-style age coefficient to account for natural strength decline.
-          </p>
-          <p>
-            <span className="text-text-secondary font-medium">Rank Tiers</span>: Iron (&lt;150) &rarr; Bronze (150) &rarr; Silver (225) &rarr; Gold (300) &rarr; Platinum (375) &rarr; Diamond (425) &rarr; Champion (475+).
-          </p>
+      <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
+        <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Scoring Methodology</h4>
+        <div className="text-[11px] text-text-muted leading-relaxed space-y-3">
+          <div>
+            <p className="text-text-secondary font-medium mb-1">1. Per-lift percentile (e1RM → percentile)</p>
+            <p>
+              Each lift&apos;s estimated 1RM is compared against strength standards matched
+              to your sex and body weight. Those standards are treated as anchor
+              percentiles along the population distribution:
+            </p>
+            <ul className="ml-4 mt-1 space-y-0.5 list-disc">
+              <li>Beginner &rarr; 5th percentile</li>
+              <li>Novice &rarr; 25th percentile</li>
+              <li>Intermediate &rarr; 50th percentile</li>
+              <li>Advanced &rarr; 85th percentile</li>
+              <li>Elite &rarr; 97th percentile</li>
+            </ul>
+            <p className="mt-1">
+              Between two anchors we interpolate in <span className="text-text-secondary">log-space</span>,
+              because strength is log-normally distributed (a 10 kg jump means much more near novice than near elite).
+            </p>
+          </div>
+          <div>
+            <p className="text-text-secondary font-medium mb-1">2. Compounding across lifts (muscle / overall rank)</p>
+            <p>
+              To combine multiple lifts into one percentile we don&apos;t average percentiles directly — that flattens extremes.
+              Instead, each percentile is converted to a <span className="text-text-secondary">z-score</span> (standard-normal),
+              the z-scores are averaged, and the mean is mapped back to a percentile.
+              This preserves the weight of outlier lifts the way real distributions do.
+            </p>
+          </div>
+          <div>
+            <p className="text-text-secondary font-medium mb-1">3. Wilks rank (bi-monthly SBD test)</p>
+            <p>
+              Your Bench + Squat + Deadlift total is normalized with the IPF Wilks formula (weight-class fair).
+              Masters (40+) get a McCulloch age-coefficient boost. The resulting Wilks score maps to tiers:
+              Iron (&lt;150), Bronze (150+), Silver (225+), Gold (300+), Platinum (375+), Diamond (425+), Champion (475+).
+            </p>
+          </div>
         </div>
       </div>
     </div>
